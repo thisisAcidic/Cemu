@@ -17,6 +17,9 @@
 
 using namespace Xbyak_aarch64;
 
+// remainingCycles of the current PPCInterpreter_t is kept in this register while recompiled code runs
+// and is only written back before calling into the emulator
+constexpr uint32 CYCLES_REG_ID = 24;
 constexpr uint32 TEMP_GPR_1_ID = 25;
 constexpr uint32 TEMP_GPR_2_ID = 26;
 constexpr uint32 PPC_RECOMPILER_INSTANCE_DATA_REG_ID = 27;
@@ -52,6 +55,7 @@ struct GPReg
 };
 
 static const XReg HCPU_REG{HCPU_REG_ID}, PPC_REC_INSTANCE_REG{PPC_RECOMPILER_INSTANCE_DATA_REG_ID}, MEM_BASE_REG{MEMORY_BASE_REG_ID};
+static const WReg CYCLES_REG{CYCLES_REG_ID};
 static const GPReg TEMP_GPR1{TEMP_GPR_1_ID};
 static const GPReg TEMP_GPR2{TEMP_GPR_2_ID};
 static const GPReg LR{TEMP_GPR_2_ID};
@@ -141,8 +145,7 @@ struct AArch64GenContext_t : CodeGenerator
 	bool r_r_s32_carry(IMLInstruction* imlInstruction);
 	bool r_r_r(IMLInstruction* imlInstruction);
 	bool r_r_r_carry(IMLInstruction* imlInstruction);
-	void compare(IMLInstruction* imlInstruction);
-	void compare_s32(IMLInstruction* imlInstruction);
+	size_t compare(const std::vector<IMLInstruction>& imlList, size_t index);
 	AdrExt guestAddress(WReg memReg, sint32 memOffset, const WReg* indexReg);
 	bool load(IMLInstruction* imlInstruction, bool indexed);
 	bool store(IMLInstruction* imlInstruction, bool indexed);
@@ -889,24 +892,35 @@ Cond ImlCondToArm64Cond(IMLCondition condition)
 	}
 }
 
-void AArch64GenContext_t::compare(IMLInstruction* imlInstruction)
+static bool IsSameCompare(const IMLInstruction& a, const IMLInstruction& b)
 {
-	WReg regR = gpReg<WReg>(imlInstruction->op_compare.regR);
-	WReg regA = gpReg<WReg>(imlInstruction->op_compare.regA);
-	WReg regB = gpReg<WReg>(imlInstruction->op_compare.regB);
-	Cond cond = ImlCondToArm64Cond(imlInstruction->op_compare.cond);
-	cmp(regA, regB);
-	cset(regR, cond);
+	if (a.type != b.type)
+		return false;
+	if (a.type == IMLType::COMPARE)
+		return a.op_compare.regA == b.op_compare.regA && a.op_compare.regB == b.op_compare.regB;
+	return a.op_compare_s32.regA == b.op_compare_s32.regA && a.op_compare_s32.immS32 == b.op_compare_s32.immS32;
 }
 
-void AArch64GenContext_t::compare_s32(IMLInstruction* imlInstruction)
+// PPC compares set the lt, gt and eq bits from the same operands, consecutive compares share one cmp
+// returns the number of compare instructions handled
+size_t AArch64GenContext_t::compare(const std::vector<IMLInstruction>& imlList, size_t index)
 {
-	WReg regR = gpReg<WReg>(imlInstruction->op_compare.regR);
-	WReg regA = gpReg<WReg>(imlInstruction->op_compare.regA);
-	sint32 imm = imlInstruction->op_compare_s32.immS32;
-	auto cond = ImlCondToArm64Cond(imlInstruction->op_compare.cond);
-	cmp_imm(regA, imm, TEMP_GPR1.WReg);
-	cset(regR, cond);
+	const IMLInstruction& first = imlList[index];
+	if (first.type == IMLType::COMPARE)
+		cmp(gpReg<WReg>(first.op_compare.regA), gpReg<WReg>(first.op_compare.regB));
+	else
+		cmp_imm(gpReg<WReg>(first.op_compare_s32.regA), first.op_compare_s32.immS32, TEMP_GPR1.WReg);
+	size_t count = 0;
+	while (index + count < imlList.size() && count < 4 && IsSameCompare(first, imlList[index + count]))
+	{
+		const IMLInstruction& compare = imlList[index + count];
+		if (compare.type == IMLType::COMPARE)
+			cset(gpReg<WReg>(compare.op_compare.regR), ImlCondToArm64Cond(compare.op_compare.cond));
+		else
+			cset(gpReg<WReg>(compare.op_compare_s32.regR), ImlCondToArm64Cond(compare.op_compare_s32.cond));
+		count++;
+	}
+	return count;
 }
 
 void AArch64GenContext_t::cjump(IMLInstruction* imlInstruction, IMLSegment* imlSegment)
@@ -938,10 +952,9 @@ void AArch64GenContext_t::jump(IMLSegment* imlSegment)
 
 void AArch64GenContext_t::conditionalJumpCycleCheck(IMLSegment* imlSegment)
 {
-	ldr(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 	prepareJump(NegativeRegValueJumpInfo{
 		.target = imlSegment->nextSegmentBranchTaken,
-		.regValue = TEMP_GPR1.WReg,
+		.regValue = CYCLES_REG,
 	});
 }
 
@@ -1020,10 +1033,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 	else if (imlInstruction->operation == IMLOperation::MACRO_COUNT_CYCLES)
 	{
 		uint32 cycleCount = imlInstruction->op_macro.param;
-		AdrUimm adrCycles = AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles));
-		ldr(TEMP_GPR1.WReg, adrCycles);
-		sub_imm(TEMP_GPR1.WReg, TEMP_GPR1.WReg, cycleCount, TEMP_GPR2.WReg);
-		str(TEMP_GPR1.WReg, adrCycles);
+		sub_imm(CYCLES_REG, CYCLES_REG, cycleCount, TEMP_GPR1.WReg);
 		return true;
 	}
 	else if (imlInstruction->operation == IMLOperation::MACRO_HLE)
@@ -1035,6 +1045,8 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		// update instruction pointer
 		mov(TEMP_GPR1.WReg, ppcAddress);
 		str(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, instructionPointer)));
+		// the HLE function can read and change the remaining cycles or switch to another thread
+		str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 		// set parameters
 		str(x30, AdrPreImm(sp, -16));
 
@@ -1050,8 +1062,8 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		ldr(x30, AdrPostImm(sp, 16));
 
 		// check if cycles where decreased beyond zero, if yes -> leave recompiler
-		ldr(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
-		tbz(TEMP_GPR1.WReg, 31, cyclesLeftLabel); // check if negative
+		ldr(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
+		tbz(CYCLES_REG, 31, cyclesLeftLabel); // check if negative
 
 		mov(TEMP_GPR1.XReg, offsetof(PPCRecompilerInstanceData_t, ppcRecompilerDirectJumpTable));
 		ldr(TEMP_GPR1.XReg, AdrReg(PPC_REC_INSTANCE_REG, TEMP_GPR1.XReg));
@@ -1530,6 +1542,7 @@ void AArch64GenContext_t::fpr_compare(IMLInstruction* imlInstruction)
 
 void AArch64GenContext_t::call_imm(IMLInstruction* imlInstruction)
 {
+	// the helpers called here don't access the remaining cycles and CYCLES_REG is callee-saved, so it doesn't need to be written back
 	str(x30, AdrPreImm(sp, -16));
 	mov(TEMP_GPR1.XReg, imlInstruction->op_call_imm.callAddress);
 	blr(TEMP_GPR1.XReg);
@@ -1594,13 +1607,9 @@ static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFun
 				if (!aarch64GenContext.r_r_r_carry(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == IMLType::COMPARE)
+			else if (imlInstruction->type == IMLType::COMPARE || imlInstruction->type == IMLType::COMPARE_S32)
 			{
-				aarch64GenContext.compare(imlInstruction);
-			}
-			else if (imlInstruction->type == IMLType::COMPARE_S32)
-			{
-				aarch64GenContext.compare_s32(imlInstruction);
+				i += aarch64GenContext.compare(segIt->imlList, i) - 1;
 			}
 			else if (imlInstruction->type == IMLType::CONDITIONAL_JUMP)
 			{
@@ -1766,6 +1775,7 @@ void AArch64GenContext_t::enterRecompilerCode()
 	st4((v8.d - v11.d)[0], AdrPostImm(x9, 32));
 	st4((v12.d - v15.d)[0], AdrPostImm(x9, 32));
 	mov(HCPU_REG, x1); // call argument 2
+	ldr(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 	mov(PPC_REC_INSTANCE_REG, (uint64)ppcRecompilerInstanceData);
 	mov(MEM_BASE_REG, (uint64)memory_base);
 
@@ -1790,6 +1800,7 @@ void AArch64GenContext_t::enterRecompilerCode()
 void AArch64GenContext_t::leaveRecompilerCode()
 {
 	str(LR.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, instructionPointer)));
+	str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 	ret();
 }
 
