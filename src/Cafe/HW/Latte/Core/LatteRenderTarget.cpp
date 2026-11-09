@@ -45,6 +45,8 @@ struct
 	LatteTextureView* rtUpdateList[64];
 	sint32 rtUpdateListSlice[64];
 	sint32 rtUpdateListMip[64];
+	// set when a scan buffer was copied to the backbuffer since the last swap, indexed by isPadView
+	bool backbufferUpdated[2];
 }sLatteRenderTargetState;
 
 struct
@@ -683,7 +685,10 @@ void LatteRenderTarget_itHLESwapScanBuffer()
 		performanceMonitor.gpuTime_frameTime.endMeasuring();
 	LattePerformanceMonitor_frameEnd();
 	LatteGPUState.frameCounter++;
-	g_renderer->SwapBuffers(true, true);
+	// some games (e.g. LEGO City Undercover) swap twice per copy to run at 30 FPS. Presenting the second swap would show an empty image
+	g_renderer->SwapBuffers(sLatteRenderTargetState.backbufferUpdated[0], sLatteRenderTargetState.backbufferUpdated[1]);
+	sLatteRenderTargetState.backbufferUpdated[0] = false;
+	sLatteRenderTargetState.backbufferUpdated[1] = false;
 
 	catchOpenGLError();
 	performanceMonitor.gpuTime_frameTime.beginMeasuring();
@@ -962,6 +967,7 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	}
 	cemu_assert(shader);
 	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
+	sLatteRenderTargetState.backbufferUpdated[isPadView] = true;
 	g_renderer->HandleScreenshotRequest(textureView, isPadView);
 	if (!g_renderer->ImguiBegin(!isPadView))
 		return;
