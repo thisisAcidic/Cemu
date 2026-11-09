@@ -439,6 +439,9 @@ private:
 
 	std::unique_ptr<SwapchainInfoVk> m_mainSwapchainInfo{}, m_padSwapchainInfo{};
 	std::atomic_flag m_destroyPadSwapchainNextAcquire{};
+	std::mutex m_padSwapchainRequestMutex;
+	std::optional<Vector2i> m_padSwapchainRequest; // pad swapchain size waiting to be created on the GPU thread
+	void CreateRequestedPadSwapchain();
 	bool IsSwapchainInfoValid(bool mainWindow) const;
 
 	VkRenderPass m_imguiRenderPass = VK_NULL_HANDLE;

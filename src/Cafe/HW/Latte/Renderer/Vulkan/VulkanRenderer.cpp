@@ -1010,9 +1010,28 @@ void VulkanRenderer::InitializeSurface(const Vector2i& size, bool mainWindow)
 	}
 	else
 	{
-		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
-		// todo: figure out a way to exclusively create swapchain on main LatteThread
-		m_padSwapchainInfo->Create();
+		// created on the GPU thread, which also recreates the main swapchain together with the imgui backend shared by both windows
+		std::unique_lock lock(m_padSwapchainRequestMutex);
+		m_padSwapchainRequest = size;
+	}
+}
+
+void VulkanRenderer::CreateRequestedPadSwapchain()
+{
+	std::unique_lock lock(m_padSwapchainRequestMutex);
+	if (!m_padSwapchainRequest)
+		return;
+	const Vector2i size = *m_padSwapchainRequest;
+	m_padSwapchainRequest.reset();
+	try
+	{
+		auto padSwapchainInfo = std::make_unique<SwapchainInfoVk>(false, size);
+		padSwapchainInfo->Create();
+		m_padSwapchainInfo = std::move(padSwapchainInfo);
+	}
+	catch (const std::exception& ex)
+	{
+		cemuLog_log(LogType::Force, "Failed to create the GamePad swapchain: {}", ex.what());
 	}
 }
 
@@ -1028,12 +1047,19 @@ SwapchainInfoVk& VulkanRenderer::GetChainInfo(bool mainWindow) const
 
 void VulkanRenderer::StopUsingPadAndWait()
 {
+	{
+		std::unique_lock lock(m_padSwapchainRequestMutex);
+		m_padSwapchainRequest.reset();
+		if (!IsSwapchainInfoValid(false))
+			return;
+	}
 	m_destroyPadSwapchainNextAcquire.test_and_set();
 	m_destroyPadSwapchainNextAcquire.wait(true);
 }
 
 bool VulkanRenderer::IsPadWindowActive()
 {
+	CreateRequestedPadSwapchain();
 	return IsSwapchainInfoValid(false);
 }
 
