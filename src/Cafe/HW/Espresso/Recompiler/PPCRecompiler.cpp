@@ -18,6 +18,11 @@
 #ifdef __aarch64__
 #include "BackendAArch64/BackendAArch64.h"
 #endif
+#ifdef ENABLE_LLVM_RECOMPILER
+#include "BackendLLVM/BackendLLVM.h"
+#include "Cafe/CafeSystem.h"
+#include "Cafe/OS/RPL/rpl_structs.h"
+#endif
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 
 #define PPCREC_FORCE_SYNCHRONOUS_COMPILATION	0 // if 1, then function recompilation will block and execute on the thread that called PPCRecompiler_visitAddressNoBlock
@@ -175,10 +180,11 @@ void PPCRecompiler_attemptEnter(PPCInterpreter_t* hCPU, uint32 enterAddress)
 	}
 }
 bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext);
+void PPCRecompiler_NativeRegisterAllocatorPass(ppcImlGenContext_t& ppcImlGenContext);
 
-// creating jitmap.enable in the user data folder writes a perf map of all recompiled functions to jitmap.txt
-// and dumps their code, so profiles taken on devices without a debugger can be attributed to guest functions
-static void PPCRecompiler_AddToJitMap(PPCRecFunction_t* ppcRecFunc)
+// creating jitmap.enable in the user data folder writes a perf map of all recompiled functions to jitmap.txt, so profiles
+// taken on devices without a debugger can be attributed to guest functions. jitdump.enable also dumps their code.
+static void PPCRecompiler_AddToJitMap(const void* code, size_t size, const std::string& name)
 {
 	static std::mutex s_mutex;
 	static bool s_initialized = false;
@@ -191,17 +197,40 @@ static void PPCRecompiler_AddToJitMap(PPCRecFunction_t* ppcRecFunc)
 		if (fs::exists(ActiveSettings::GetUserDataPath("jitmap.enable"), ec))
 		{
 			s_mapFile = FileStream::createFile2(ActiveSettings::GetUserDataPath("jitmap.txt"));
-			fs::create_directories(ActiveSettings::GetUserDataPath("dump/recompiler"), ec);
-			ActiveSettings::EnableDumpRecompilerFunctions(true);
+			if (fs::exists(ActiveSettings::GetUserDataPath("jitdump.enable"), ec))
+			{
+				fs::create_directories(ActiveSettings::GetUserDataPath("dump/recompiler"), ec);
+				ActiveSettings::EnableDumpRecompilerFunctions(true);
+			}
 		}
 	}
 	if (!s_mapFile)
 		return;
-	s_mapFile->writeString(fmt::format("{:x} {:x} ppc_{:08x}\n", (uintptr_t)ppcRecFunc->x86Code, ppcRecFunc->x86Size, ppcRecFunc->ppcAddress).c_str());
+	s_mapFile->writeString(fmt::format("{:x} {:x} {}\n", (uintptr_t)code, size, name).c_str());
 	s_mapFile->Flush();
 }
 
-PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PPCRange_t range, std::set<uint32>& entryAddresses, std::vector<std::pair<MPTR, uint32>>& entryPointsOut, PPCFunctionBoundaryTracker& boundaryTracker)
+#ifdef ENABLE_LLVM_RECOMPILER
+std::atomic<uint32> g_PPCRecompilerLLVM_generation{1}; // call sites start zeroed, so they never match
+
+// host entry points of functions translated by LLVM, to resolve direct calls between them
+static std::mutex s_llvmEntryPointMutex;
+static std::unordered_map<void*, std::pair<void*, uint32>> s_llvmEntryPoints;
+
+static void PPCRecompiler_addToLLVMFunctionList(uint32 address);
+
+static void PPCRecompiler_registerLLVMEntryPoints(PPCRecFunction_t* ppcRecFunc, const std::vector<std::pair<MPTR, uint32>>& entryPoints, void* llvmFunction)
+{
+	std::unique_lock lock(s_llvmEntryPointMutex);
+	// the entry indices of the translated function follow the order of the enterable segments, like the entry points
+	for (size_t i = 0; i < entryPoints.size(); i++)
+		s_llvmEntryPoints[(uint8*)ppcRecFunc->x86Code + entryPoints[i].second] = {llvmFunction, (uint32)i};
+}
+#endif
+
+// with useCachedLLVM a translation of the LLVM backend is used if the cache has one, usedLLVM tells if it was
+PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PPCRange_t range, std::set<uint32>& entryAddresses, std::vector<std::pair<MPTR, uint32>>& entryPointsOut, PPCFunctionBoundaryTracker& boundaryTracker,
+												  bool useCachedLLVM = false, bool* usedLLVM = nullptr)
 {
 	if (range.startAddress >= PPC_REC_CODE_AREA_END)
 	{
@@ -260,7 +289,9 @@ PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PP
 		return nullptr;
 	}
 
+	bool useLLVMEntryPoints = false;
 #if defined(ARCH_X86_64)
+	PPCRecompiler_NativeRegisterAllocatorPass(ppcImlGenContext);
 	// emit x64 code
 	bool x64GenerationSuccess = PPCRecompiler_generateX64Code(ppcRecFunc, &ppcImlGenContext);
 	if (x64GenerationSuccess == false)
@@ -268,13 +299,30 @@ PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PP
 		return nullptr;
 	}
 #elif defined(__aarch64__)
-	bool aarch64GenerationSuccess = PPCRecompiler_generateAArch64Code(ppcRecFunc, &ppcImlGenContext);
+	bool aarch64GenerationSuccess = false;
+#ifdef ENABLE_LLVM_RECOMPILER
+	// the LLVM backend works on the IML before register allocation
+	PPCRecompilerLLVM_Result llvmResult;
+	const bool useLLVM = useCachedLLVM && PPCRecompilerLLVM_LoadCached(ppcImlGenContext, llvmResult);
+	if (usedLLVM)
+		*usedLLVM = useLLVM;
+	if (useLLVM)
+	{
+		aarch64GenerationSuccess = PPCRecompiler_generateAArch64LLVMEntryPoints(ppcRecFunc, &ppcImlGenContext, (void*)llvmResult.function, PPCRecompilerLLVM_IsStatsEnabled() ? g_PPCRecompilerLLVM_stats : nullptr);
+		useLLVMEntryPoints = true;
+	}
+	else
+#endif
+	{
+		PPCRecompiler_NativeRegisterAllocatorPass(ppcImlGenContext);
+		aarch64GenerationSuccess = PPCRecompiler_generateAArch64Code(ppcRecFunc, &ppcImlGenContext);
+	}
 	if (aarch64GenerationSuccess == false)
 	{
 		return nullptr;
 	}
 #endif
-	PPCRecompiler_AddToJitMap(ppcRecFunc);
+	PPCRecompiler_AddToJitMap(ppcRecFunc->x86Code, ppcRecFunc->x86Size, fmt::format("ppc_{:08x}{}", ppcRecFunc->ppcAddress, useLLVMEntryPoints ? "_entry" : ""));
 	if (ActiveSettings::DumpRecompilerFunctionsEnabled())
 	{
 		FileStream* fs = FileStream::createFile2(ActiveSettings::GetUserDataPath(fmt::format("dump/recompiler/ppc_{:08x}.bin", ppcRecFunc->ppcAddress)));
@@ -284,6 +332,21 @@ PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PP
 			delete fs;
 		}
 	}
+#ifdef ENABLE_LLVM_RECOMPILER
+	if (useLLVM)
+	{
+		PPCRecompiler_AddToJitMap(llvmResult.code, llvmResult.codeSize, fmt::format("ppc_{:08x}_llvm", ppcRecFunc->ppcAddress));
+		if (ActiveSettings::DumpRecompilerFunctionsEnabled())
+		{
+			FileStream* fs = FileStream::createFile2(ActiveSettings::GetUserDataPath(fmt::format("dump/recompiler/ppc_{:08x}_llvm.bin", ppcRecFunc->ppcAddress)));
+			if (fs)
+			{
+				fs->writeData(llvmResult.code, llvmResult.codeSize);
+				delete fs;
+			}
+		}
+	}
+#endif
 
 	// collect list of PPC-->x64 entry points
 	entryPointsOut.clear();
@@ -297,6 +360,10 @@ PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PP
 
 		entryPointsOut.emplace_back(ppcEnterOffset, x64Offset);
 	}
+#ifdef ENABLE_LLVM_RECOMPILER
+	if (useLLVMEntryPoints)
+		PPCRecompiler_registerLLVMEntryPoints(ppcRecFunc, entryPointsOut, llvmResult.function);
+#endif
 
 #if PPCREC_LOG_RECOMPILATION_RESULTS
 	bt.Stop();
@@ -382,8 +449,6 @@ bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext)
 	IMLOptimizer_StandardOptimizationPass(ppcImlGenContext);
 
 	IMLOptimizer_OptimizeSinglePrecisionStores(ppcImlGenContext);
-
-	PPCRecompiler_NativeRegisterAllocatorPass(ppcImlGenContext);
 
 	return true;
 }
@@ -474,10 +539,23 @@ void PPCRecompiler_recompileAtAddress(uint32 address)
 	s_ppcRecompilerState.recompilerSpinlock.unlock();
 
 	std::vector<std::pair<MPTR, uint32>> functionEntryPoints;
-	PPCRecFunction_t* func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
+	bool useCachedLLVM = false;
+#ifdef ENABLE_LLVM_RECOMPILER
+	useCachedLLVM = PPCRecompilerLLVM_IsEnabled();
+#endif
+	bool usedLLVM = false;
+	PPCRecFunction_t* func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries, useCachedLLVM, &usedLLVM);
 	if (!func)
 		return; // recompilation failed
-	PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+	bool isActive = PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+#ifdef ENABLE_LLVM_RECOMPILER
+	// call sites that found no translated function there can call this one directly now
+	if (isActive && usedLLVM)
+		g_PPCRecompilerLLVM_generation.fetch_add(1, std::memory_order_release);
+	// cached ones too, so the list stays complete when the cache is rebuilt
+	if (isActive && useCachedLLVM)
+		PPCRecompiler_addToLLVMFunctionList(address);
+#endif
 }
 
 void PPCRecompiler_thread()
@@ -523,6 +601,155 @@ void PPCRecompiler_thread()
 	}
 }
 
+#ifdef ENABLE_LLVM_RECOMPILER
+// Functions a title ran in earlier sessions are translated by LLVM before it starts, the recompiler then takes those
+// translations from the cache. Functions that run for the first time are translated natively and added to the list for
+// the next start, so the slow translation never runs while the title does.
+static struct
+{
+	std::mutex mutex;
+	std::unordered_set<uint32> addresses;
+	std::unique_ptr<FileStream> file;
+	std::atomic_bool isPending{false};
+	std::atomic<uint32> preparedCount{0};
+	std::atomic<uint32> totalCount{0};
+}s_llvmFunctionList;
+
+static void PPCRecompiler_openLLVMFunctionList()
+{
+	std::unique_lock lock(s_llvmFunctionList.mutex);
+	s_llvmFunctionList.addresses.clear();
+	s_llvmFunctionList.file.reset();
+	std::error_code ec;
+	fs::create_directories(ActiveSettings::GetCachePath("llvm"), ec);
+	const fs::path path = ActiveSettings::GetCachePath("llvm/{:016x}.functions", CafeSystem::GetForegroundTitleId());
+	auto data = FileStream::LoadIntoMemory(path);
+	if (!data)
+	{
+		s_llvmFunctionList.file.reset(FileStream::createFile2(path));
+		return;
+	}
+	const size_t validSize = data->size() & ~3;
+	for (size_t i = 0; i < validSize; i += 4)
+	{
+		uint32 address;
+		memcpy(&address, data->data() + i, sizeof(address));
+		s_llvmFunctionList.addresses.emplace(address);
+	}
+	if (validSize != data->size())
+		fs::resize_file(path, validSize, ec);
+	s_llvmFunctionList.file.reset(FileStream::openFile2(path, true));
+	if (s_llvmFunctionList.file)
+		s_llvmFunctionList.file->SetPosition(validSize);
+}
+
+static void PPCRecompiler_addToLLVMFunctionList(uint32 address)
+{
+	std::unique_lock lock(s_llvmFunctionList.mutex);
+	if (!s_llvmFunctionList.file || !s_llvmFunctionList.addresses.emplace(address).second)
+		return;
+	s_llvmFunctionList.file->writeU32(address);
+	s_llvmFunctionList.file->Flush();
+}
+
+static void PPCRecompiler_prepareLLVMFunction(uint32 address)
+{
+	// the list can contain code of modules the title loads later
+	if (!RPLLoader_FindModuleByCodeAddr(address))
+		return;
+	PPCFunctionBoundaryTracker funcBoundaries;
+	funcBoundaries.trackStartPoint(address);
+	PPCFunctionBoundaryTracker::PPCRange_t range;
+	if (!funcBoundaries.getRangeForAddress(address, range))
+		return;
+	std::set<uint32> entryAddresses;
+	entryAddresses.emplace(address);
+	PPCRecFunction_t ppcRecFunc{};
+	ppcRecFunc.ppcAddress = range.startAddress;
+	ppcRecFunc.ppcSize = range.length;
+	ppcImlGenContext_t ppcImlGenContext = { 0 };
+	ppcImlGenContext.debug_entryPPCAddress = range.startAddress;
+	if (!PPCRecompiler_generateIntermediateCode(ppcImlGenContext, &ppcRecFunc, entryAddresses, funcBoundaries))
+		return;
+	PPCRecompiler_ApplyIMLPasses(ppcImlGenContext);
+	PPCRecompilerLLVM_Prepare(ppcImlGenContext, ppcRecFunc);
+}
+
+#if BOOST_OS_LINUX
+// keeps the calling thread off the fastest cores, they get hot the quickest
+static void PPCRecompiler_avoidFastestCores()
+{
+	std::vector<uint32> maxFrequencies;
+	while (true)
+	{
+		std::ifstream file(fmt::format("/sys/devices/system/cpu/cpu{}/cpufreq/cpuinfo_max_freq", maxFrequencies.size()));
+		uint32 frequency;
+		if (!(file >> frequency))
+			break;
+		maxFrequencies.emplace_back(frequency);
+	}
+	if (maxFrequencies.empty())
+		return;
+	const uint32 fastest = *std::max_element(maxFrequencies.begin(), maxFrequencies.end());
+	cpu_set_t cores;
+	CPU_ZERO(&cores);
+	for (size_t i = 0; i < maxFrequencies.size(); i++)
+	{
+		if (maxFrequencies[i] < fastest)
+			CPU_SET(i, &cores);
+	}
+	if (CPU_COUNT(&cores) > 0)
+		sched_setaffinity(0, sizeof(cores), &cores);
+}
+#endif
+
+void PPCRecompiler_prepareKnownFunctions()
+{
+	if (!s_llvmFunctionList.isPending)
+		return;
+	std::vector<uint32> addresses;
+	{
+		std::unique_lock lock(s_llvmFunctionList.mutex);
+		addresses.assign(s_llvmFunctionList.addresses.begin(), s_llvmFunctionList.addresses.end());
+	}
+	std::sort(addresses.begin(), addresses.end());
+	s_llvmFunctionList.preparedCount = 0;
+	s_llvmFunctionList.totalCount = (uint32)addresses.size();
+	BenchmarkTimer timer;
+	timer.Start();
+	// half of the cores, and not the fastest ones, so the device doesn't heat up too much
+	std::atomic<size_t> nextIndex{0};
+	std::vector<std::thread> threads;
+	const uint32 threadCount = std::max(2u, std::thread::hardware_concurrency() / 2);
+	for (uint32 i = 0; i < threadCount; i++)
+	{
+		threads.emplace_back([&]() {
+			SetThreadName("PPCRecLLVM");
+#if BOOST_OS_LINUX
+			PPCRecompiler_avoidFastestCores();
+#endif
+			for (size_t index = nextIndex++; index < addresses.size(); index = nextIndex++)
+			{
+				PPCRecompiler_prepareLLVMFunction(addresses[index]);
+				s_llvmFunctionList.preparedCount++;
+			}
+		});
+	}
+	for (std::thread& thread : threads)
+		thread.join();
+	timer.Stop();
+	cemuLog_log(LogType::Force, "LLVM: Prepared {} functions in {:.1f}s", addresses.size(), timer.GetElapsedMilliseconds() / 1000.0);
+	s_llvmFunctionList.isPending = false;
+}
+
+bool PPCRecompiler_getLLVMPreparationProgress(uint32& preparedCount, uint32& totalCount)
+{
+	preparedCount = s_llvmFunctionList.preparedCount;
+	totalCount = s_llvmFunctionList.totalCount;
+	return s_llvmFunctionList.isPending;
+}
+#endif
+
 #define PPC_REC_ALLOC_BLOCK_SIZE	(4*1024*1024) // 4MB
 
 constexpr uint32 PPCRecompiler_GetNumAddressSpaceBlocks()
@@ -531,6 +758,30 @@ constexpr uint32 PPCRecompiler_GetNumAddressSpaceBlocks()
 }
 
 std::bitset<PPCRecompiler_GetNumAddressSpaceBlocks()> ppcRecompiler_reservedBlockMask;
+
+#ifdef ENABLE_LLVM_RECOMPILER
+void PPCRecompilerLLVM_ResolveCall(uint32 target, PPCRecompilerLLVM_CallSite* site)
+{
+	// read before the jump table, a change during the lookup makes the call site resolve again
+	const uint32 generation = g_PPCRecompilerLLVM_generation.load(std::memory_order_acquire);
+	g_PPCRecompilerLLVM_stats[LLVM_STAT_RESOLVES]++;
+	void* function = nullptr;
+	uint32 entryIndex = 0;
+	if (target / PPC_REC_ALLOC_BLOCK_SIZE < ppcRecompiler_reservedBlockMask.size() && ppcRecompiler_reservedBlockMask[target / PPC_REC_ALLOC_BLOCK_SIZE])
+	{
+		void* entryPoint = (void*)ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[target / 4];
+		std::unique_lock lock(s_llvmEntryPointMutex);
+		if (auto it = s_llvmEntryPoints.find(entryPoint); it != s_llvmEntryPoints.end())
+		{
+			std::tie(function, entryIndex) = it->second;
+			g_PPCRecompilerLLVM_stats[LLVM_STAT_RESOLVED]++;
+		}
+	}
+	site->function = function;
+	site->entryIndex = entryIndex;
+	site->key.store(((uint64)generation << 32) | target, std::memory_order_release);
+}
+#endif
 
 void PPCRecompiler_reserveLookupTableBlock(uint32 offset)
 {
@@ -616,6 +867,10 @@ void PPCRecompiler_deleteFunction(PPCRecFunction_t* func)
 			s_ppcRecompilerState.functionStorage.deleteRange(r.storedRange);
 		r.storedRange = nullptr;
 	}
+#ifdef ENABLE_LLVM_RECOMPILER
+	// direct calls from translated code must not reach the deleted function anymore
+	g_PPCRecompilerLLVM_generation.fetch_add(1, std::memory_order_release);
+#endif
 	// todo - free x86 code
 }
 
@@ -731,6 +986,13 @@ void PPCRecompiler_init()
 	// launch recompilation thread
     s_ppcRecompilerState.workerThreadStopSignal = false;
     s_ppcRecompilerState.workerThread = std::thread(PPCRecompiler_thread);
+#ifdef ENABLE_LLVM_RECOMPILER
+	if (PPCRecompilerLLVM_IsEnabled())
+	{
+		PPCRecompiler_openLLVMFunctionList();
+		s_llvmFunctionList.isPending = true;
+	}
+#endif
 }
 
 void PPCRecompiler_Shutdown()
@@ -739,6 +1001,13 @@ void PPCRecompiler_Shutdown()
     s_ppcRecompilerState.workerThreadStopSignal = true;
     if(s_ppcRecompilerState.workerThread.joinable())
         s_ppcRecompilerState.workerThread.join();
+#ifdef ENABLE_LLVM_RECOMPILER
+	{
+		std::unique_lock lock(s_llvmFunctionList.mutex);
+		s_llvmFunctionList.file.reset();
+	}
+	s_llvmFunctionList.isPending = false;
+#endif
     // clean up queues
     while(!s_ppcRecompilerState.targetQueue.empty())
         s_ppcRecompilerState.targetQueue.pop();

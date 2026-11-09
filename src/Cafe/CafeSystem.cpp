@@ -424,6 +424,10 @@ void cemu_initForGame()
 	// load graphic packs
 	cemuLog_log(LogType::Force, "------- Activate graphic packs -------");
 	GraphicPack2::ActivateForCurrentTitle();
+#ifdef ENABLE_LLVM_RECOMPILER
+	// graphic packs can patch code, so this comes after activating them
+	PPCRecompiler_prepareKnownFunctions();
+#endif
 	// print audio log
 	IAudioAPI::PrintLogging();
 	IAudioInputAPI::PrintLogging();

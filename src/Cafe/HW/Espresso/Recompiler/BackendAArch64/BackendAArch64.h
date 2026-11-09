@@ -4,6 +4,9 @@
 #include "../PPCRecompiler.h"
 
 bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext);
+// emits an entry point for each enterable segment which calls the function produced by the LLVM backend
+// stats is optional, it counts entries and the kind of exit
+bool PPCRecompiler_generateAArch64LLVMEntryPoints(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext, void* llvmFunction, uint64* stats);
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size);
 
 void PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();

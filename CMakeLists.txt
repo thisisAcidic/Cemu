@@ -133,6 +133,7 @@ endif()
 
 option(ENABLE_OPENGL "Enables the OpenGL backend" ${ENABLE_OPENGL_DEFAULT})
 option(ENABLE_VULKAN "Enables the Vulkan backend" ON)
+option(ENABLE_LLVM_RECOMPILER "Adds an optional LLVM based backend to the AArch64 recompiler, LLVM_DIR has to point to an LLVM build" OFF)
 option(ENABLE_METAL "Enables the Metal backend" ${ENABLE_METAL_DEFAULT})
 option(ENABLE_DISCORD_RPC "Enables the Discord Rich Presence feature" ON)
 

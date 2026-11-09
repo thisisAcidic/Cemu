@@ -635,6 +635,18 @@ if(CEMU_ARCHITECTURE MATCHES "(aarch64)|(AARCH64)|(arm64)|(ARM64)")
     HW/Espresso/Recompiler/BackendAArch64/BackendAArch64.h
   )
   target_link_libraries(CemuCafe PRIVATE xbyak_aarch64)
+  if(ENABLE_LLVM_RECOMPILER)
+    find_package(LLVM REQUIRED CONFIG)
+    target_sources(CemuCafe PRIVATE
+      HW/Espresso/Recompiler/BackendLLVM/BackendLLVM.cpp
+      HW/Espresso/Recompiler/BackendLLVM/BackendLLVM.h
+    )
+    separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+    target_include_directories(CemuCafe PRIVATE ${LLVM_INCLUDE_DIRS})
+    target_compile_definitions(CemuCafe PRIVATE ENABLE_LLVM_RECOMPILER ${LLVM_DEFINITIONS_LIST})
+    llvm_map_components_to_libnames(LLVM_LIBRARIES core orcjit passes aarch64codegen aarch64asmparser aarch64desc aarch64info)
+    target_link_libraries(CemuCafe PRIVATE ${LLVM_LIBRARIES})
+  endif()
 endif()
 
 set_property(TARGET CemuCafe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

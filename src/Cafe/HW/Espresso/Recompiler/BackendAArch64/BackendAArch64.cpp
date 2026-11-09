@@ -190,6 +190,7 @@ struct AArch64GenContext_t : CodeGenerator
 	explicit AArch64GenContext_t(Allocator* allocator = nullptr);
 	void enterRecompilerCode();
 	void leaveRecompilerCode();
+	void llvmEntryPoint(void* function, uint32 entryIndex, uint64* stats);
 
 	void r_name(IMLInstruction* imlInstruction);
 	void name_r(IMLInstruction* imlInstruction);
@@ -1610,6 +1611,26 @@ void AArch64GenContext_t::call_imm(IMLInstruction* imlInstruction)
 	ldr(x30, AdrPostImm(sp, 16));
 }
 
+static void PPCRecompiler_storeAArch64Code(PPCRecFunction_t* PPCRecFunction, AArch64GenContext_t& aarch64GenContext, AArch64Allocator& allocator, size_t codeSize)
+{
+	// branches within the function are PC-relative, so the code can be moved
+	aarch64GenContext.ready(CodeArray::PROTECT_RW);
+	if (void* code = s_recompiledCodeArena.Store(aarch64GenContext.getCode(), codeSize))
+	{
+		PPCRecFunction->x86Code = code;
+		PPCRecFunction->x86Size = codeSize;
+		return;
+	}
+
+	aarch64GenContext.readyRE();
+
+	// set code
+	PPCRecFunction->x86Code = aarch64GenContext.getCode<void*>();
+	PPCRecFunction->x86Size = aarch64GenContext.getMaxSize();
+	// set free disabled to skip freeing the code from the CodeGenerator destructor
+	allocator.setFreeDisabled(true);
+}
+
 static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext, size_t jumpInstrCount, bool& needsMoreJumpInstructions)
 {
 	AArch64Allocator allocator;
@@ -1791,34 +1812,40 @@ static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFun
 		return false;
 	}
 	aarch64GenContext.setSize(codeSize);
-
-	// branches within the function are PC-relative, so the code can be moved
-	aarch64GenContext.ready(CodeArray::PROTECT_RW);
-	if (void* code = s_recompiledCodeArena.Store(aarch64GenContext.getCode(), codeSize))
-	{
-		PPCRecFunction->x86Code = code;
-		PPCRecFunction->x86Size = codeSize;
-		return true;
-	}
-
-	aarch64GenContext.readyRE();
-
-	// set code
-	PPCRecFunction->x86Code = aarch64GenContext.getCode<void*>();
-	PPCRecFunction->x86Size = aarch64GenContext.getMaxSize();
-	// set free disabled to skip freeing the code from the CodeGenerator destructor
-	allocator.setFreeDisabled(true);
+	PPCRecompiler_storeAArch64Code(PPCRecFunction, aarch64GenContext, allocator, codeSize);
 	return true;
 }
 
+// the LLVM backend emits its entry points from another thread, and the allocator of xbyak isn't thread-safe
+static std::mutex s_codeGenerationMutex;
+
 bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
 {
+	std::unique_lock lock(s_codeGenerationMutex);
 	bool needsMoreJumpInstructions;
 	if (PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 1, needsMoreJumpInstructions))
 		return true;
 	if (!needsMoreJumpInstructions)
 		return false;
 	return PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 2, needsMoreJumpInstructions);
+}
+
+bool PPCRecompiler_generateAArch64LLVMEntryPoints(PPCRecFunction_t* PPCRecFunction, ppcImlGenContext_t* ppcImlGenContext, void* llvmFunction, uint64* stats)
+{
+	std::unique_lock lock(s_codeGenerationMutex);
+	AArch64Allocator allocator;
+	AArch64GenContext_t aarch64GenContext{&allocator};
+	// the entry indices of the translated function follow the order of the enterable segments
+	uint32 entryIndex = 0;
+	for (IMLSegment* segIt : ppcImlGenContext->segmentList2)
+	{
+		if (!segIt->isEnterable)
+			continue;
+		segIt->x64Offset = aarch64GenContext.getSize();
+		aarch64GenContext.llvmEntryPoint(llvmFunction, entryIndex++, stats);
+	}
+	PPCRecompiler_storeAArch64Code(PPCRecFunction, aarch64GenContext, allocator, aarch64GenContext.getSize());
+	return true;
 }
 
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
@@ -1880,6 +1907,57 @@ void AArch64GenContext_t::leaveRecompilerCode()
 	str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 	ldr(x30, AdrUimm(sp, RECOMPILER_EXIT_ADDRESS_STACK_OFFSET));
 	ret();
+}
+
+// Calls a function translated by the LLVM backend and continues at the guest address it returns. The low two bits of the
+// result say how: 0 jump, 1 leave the recompiler, 2 call, 3 return. Nothing is held in registers at an entry point.
+// The translated function uses the preserve_none calling convention (arguments in x20 to x23), it only keeps x29
+// which is HCPU_REG.
+void AArch64GenContext_t::llvmEntryPoint(void* function, uint32 entryIndex, uint64* stats)
+{
+	str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
+	stp(PPC_REC_INSTANCE_REG, MEM_BASE_REG, AdrPreImm(sp, -16));
+	mov(x20, HCPU_REG);
+	mov(x21, MEM_BASE_REG);
+	mov(w22, entryIndex);
+	mov(w23, 0); // depth of direct calls, not wzr which xbyak encodes as wsp in a mov
+	mov(TEMP_GPR1.XReg, (uint64)function);
+	blr(TEMP_GPR1.XReg);
+	ldp(PPC_REC_INSTANCE_REG, MEM_BASE_REG, AdrPostImm(sp, 16));
+	ldr(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
+	if (stats)
+	{
+		// count entries and the kind of exit, not atomic since it's only for statistics
+		mov(x9, (uint64)stats);
+		ldr(x10, AdrUimm(x9, 4 * sizeof(uint64)));
+		add(x10, x10, 1);
+		str(x10, AdrUimm(x9, 4 * sizeof(uint64)));
+		and_(w11, w0, 3);
+		add(x9, x9, w11, ExtMod::UXTW, 3);
+		ldr(x10, AdrNoOfs(x9));
+		add(x10, x10, 1);
+		str(x10, AdrNoOfs(x9));
+	}
+
+	and_(LR.WReg, w0, 0xFFFFFFFC);
+	// leaving goes through the jump table entry of address 0, like MACRO_LEAVE
+	and_(w1, w0, 3);
+	cmp(w1, 1);
+	csel(w1, wzr, LR.WReg, Cond::EQ);
+	mov(TEMP_GPR1.WReg, offsetof(PPCRecompilerInstanceData_t, ppcRecompilerDirectJumpTable));
+	add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, w1, ShMod::LSL, 1);
+	ldr(TEMP_GPR1.XReg, AdrExt(PPC_REC_INSTANCE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
+
+	Label callOrReturn, call;
+	tbnz(w0, 1, callOrReturn);
+	br(TEMP_GPR1.XReg);
+	L(callOrReturn);
+	tbz(w0, 0, call);
+	ret(TEMP_GPR1.XReg);
+	L(call);
+	// the callee returns through the jump table, never to the next instruction
+	blr(TEMP_GPR1.XReg);
+	brk(0xf001);
 }
 
 bool initializedInterfaceFunctions = false;

@@ -26,6 +26,7 @@
 
 #include "config/ActiveSettings.h"
 #include "Cafe/TitleList/GameInfo.h"
+#include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 
 #include "util/helpers/SystemException.h"
 #include "Cafe/HW/Latte/Common/RegisterSerializer.h"
@@ -75,6 +76,7 @@ bool LatteShaderCache_readSeparableShader(uint8* shaderInfoData, sint32 shaderIn
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId);
 bool LatteShaderCache_updatePipelineLoadingProgress();
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines);
+void LatteShaderCache_ShowLLVMPreparationProgress();
 
 struct
 {
@@ -504,6 +506,9 @@ void LatteShaderCache_Load()
 	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
+#ifdef ENABLE_LLVM_RECOMPILER
+	LatteShaderCache_ShowLLVMPreparationProgress();
+#endif
 
 
 	g_renderer->BeginFrame(true);
@@ -530,6 +535,55 @@ void LatteShaderCache_Load()
 
 	if(Latte_GetStopSignal())
 		LatteThread_Exit();
+}
+
+// the title starts once the recompiler has translated the code known from earlier sessions
+void LatteShaderCache_ShowLLVMPreparationProgress()
+{
+	const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
+	uint32 preparedCount, totalCount;
+	while (PPCRecompiler_getLLVMPreparationProgress(preparedCount, totalCount) && !Latte_GetStopSignal())
+	{
+		int w, h;
+		WindowSystem::GetWindowPhysSize(w, h);
+		const Vector2f window_size{ (float)w,(float)h };
+		g_renderer->BeginFrame(true);
+		if (g_renderer->ImguiBegin(true))
+		{
+			auto& io = ImGui::GetIO();
+			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureTVId, 1280, 720);
+			ImGui::SetNextWindowPos({ window_size.x / 2.0f, window_size.y / 2.0f }, ImGuiCond_Always, { 0.5f, 0.5f });
+			ImGui::SetNextWindowSize({ io.DisplaySize.x * 0.5f, 0 }, ImGuiCond_Always);
+			ImGui::SetNextWindowBgAlpha(0.8f);
+			ImGui::PushStyleColor(ImGuiCol_PlotHistogram, 0xFF888888);
+			ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
+			ImGui::PushFont(ImGui_GetFont(window_size.y / 32.0f));
+			if (ImGui::Begin("Translation progress", nullptr, kPopupFlags))
+			{
+				const float width = ImGui::GetWindowSize().x / 2.0f;
+				std::string text = "Translating game code...";
+				ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
+				ImGui::Text("%s", text.c_str());
+				const float progress = totalCount ? (float)preparedCount / (float)totalCount : 0.0f;
+				ImGui::ProgressBar(progress, { -1, 0 }, "");
+				text = fmt::format("{}/{} ({}%)", preparedCount, totalCount, (int)(progress * 100));
+				ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
+				ImGui::Text("%s", text.c_str());
+			}
+			ImGui::End();
+			ImGui::PopFont();
+			ImGui::PopStyleColor(2);
+			g_renderer->ImguiEnd();
+		}
+		g_renderer->BeginFrame(false);
+		if (g_renderer->ImguiBegin(false))
+		{
+			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureDRCId, 854, 480);
+			g_renderer->ImguiEnd();
+		}
+		g_renderer->SwapBuffers(true, true);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
 }
 
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines)

@@ -30,6 +30,7 @@ fun String.runCommand(workingDir: File = File(".")): String? {
 fun getGitHash(): String? = "git log --format=%h -1".runCommand()?.trim()
 
 val versionMajor: Int? = System.getenv("EMULATOR_VERSION_MAJOR")?.toIntOrNull()
+val llvmDir: String? = System.getenv("LLVM_DIR")
 val versionMinor: Int? = System.getenv("EMULATOR_VERSION_MINOR")?.toIntOrNull()
 
 fun getVersionName(): String {
@@ -147,6 +148,9 @@ android {
                             "-DEMULATOR_VERSION_MINOR=$versionMinor"
                         )
                     )
+                }
+                if (llvmDir != null) {
+                    arguments.addAll(arrayOf("-DENABLE_LLVM_RECOMPILER=ON", "-DLLVM_DIR=$llvmDir"))
                 }
                 // abiFilters("arm64-v8a", "x86_64")
                 abiFilters("arm64-v8a")

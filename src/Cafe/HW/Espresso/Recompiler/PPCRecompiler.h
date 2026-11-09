@@ -157,6 +157,11 @@ extern PPCRecompilerInstanceData_t* ppcRecompilerInstanceData;
 void PPCRecompiler_init();
 void PPCRecompiler_Shutdown();
 
+// with the LLVM backend: translates the functions the title ran in earlier sessions, before it starts running
+void PPCRecompiler_prepareKnownFunctions();
+// returns true while that is still to do or in progress
+bool PPCRecompiler_getLLVMPreparationProgress(uint32& preparedCount, uint32& totalCount);
+
 void PPCRecompiler_Enable();
 void PPCRecompiler_Disable();
 
