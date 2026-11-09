@@ -51,6 +51,7 @@ namespace coreinit
 		static void updateEarliestAlarmAtomic()
 		{
 			cemu_assert_debug(__OSHasSchedulerLock());
+			const uint64 previousSoonestAlarm = g_soonestAlarm;
 			if (!g_activeAlarmList.empty())
 			{
 				auto firstAlarm = g_activeAlarmList.begin();
@@ -60,6 +61,9 @@ namespace coreinit
 			{
 				g_soonestAlarm = std::numeric_limits<uint64>::max();
 			}
+			// the idle main core sleeps until the soonest alarm is due
+			if (g_soonestAlarm < previousSoonestAlarm)
+				__OSWakeIdleMainCore();
 		}
 
 		static void updateAlarms(uint64 currentTick)
@@ -108,6 +112,11 @@ namespace coreinit
 		uint64 getNextFire() const 
 		{
 			return m_nextFire;
+		}
+
+		static uint64 getSoonestFireTick()
+		{
+			return g_soonestAlarm;
 		}
 
 		static bool quickCheckForAlarm(uint64 currentTick)
@@ -171,6 +180,11 @@ namespace coreinit
 		__OSLockScheduler();
 		OSHostAlarm::updateAlarms(currentTick);
 		__OSUnlockScheduler();
+	}
+
+	uint64 alarm_getSoonestFireTick()
+	{
+		return OSHostAlarm::getSoonestFireTick();
 	}
 
 	/* alarm API */

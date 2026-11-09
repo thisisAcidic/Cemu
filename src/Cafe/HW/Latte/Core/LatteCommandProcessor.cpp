@@ -161,12 +161,18 @@ void LatteCP_signalEnterWait()
 	LatteIndices_invalidateAll();
 }
 
+// how long the GPU thread keeps polling for new commands before it sleeps
+constexpr uint64 IDLE_SPIN_MICROSECONDS = 50;
+// OSScreen flips are only polled, so don't sleep for too long
+constexpr std::chrono::microseconds IDLE_MAX_WAIT{1000};
+
 /*
 * Read a U32 from the command buffer
-* If no data is available then wait in a busy loop
+* If no data is available then wait in a busy loop for a bit, then sleep until new commands are submitted or the next vsync is due
 */
 uint32 LatteCP_readU32Deprc()
 {
+	uint64 idleStartTsc = 0;
 	// no display list active
 	while (true)
 	{
@@ -174,6 +180,8 @@ uint32 LatteCP_readU32Deprc()
 		if ( TCL::TCLGPUReadRBWord(cmdWord) )
 			return cmdWord;
 
+		// read before the checks below, so anything submitted after them is noticed by LatteThread_Sleep()
+		const uint32 wakeUpCounter = LatteThread_GetWakeUpCounter();
 		g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
 		performanceMonitor.gpuTime_idleTime.beginMeasuring();
 		// no command data available, spin in a busy loop for a bit then check again
@@ -191,7 +199,13 @@ uint32 LatteCP_readU32Deprc()
 		// still no command data available, do some other tasks
 		LatteTiming_HandleTimedVsync();
 		LatteAsyncCommands_checkAndExecute();
-		std::this_thread::yield();
+		const uint64 currentTsc = PPCTimer_getRawTsc();
+		if (idleStartTsc == 0)
+			idleStartTsc = currentTsc;
+		if (currentTsc - idleStartTsc >= PPCTimer_microsecondsToTsc(IDLE_SPIN_MICROSECONDS))
+			LatteThread_Sleep(wakeUpCounter, std::min(LatteTiming_GetTimeUntilTimedVsync(), IDLE_MAX_WAIT));
+		else
+			std::this_thread::yield();
 		performanceMonitor.gpuTime_idleTime.endMeasuring();
 	}
 	UNREACHABLE;
@@ -731,7 +745,6 @@ LatteCMDPtr LatteCP_itDrawIndex2(LatteCMDPtr cmd, uint32 nWords, DrawPassContext
 	uint32 count = LatteReadCMD();
 	uint32 ukn3 = LatteReadCMD();
 
-	LatteGPUState.currentDrawCallTick = GetTickCount();
 	drawPassCtx.executeDraw(count, false, physIndices);
 	return cmd;
 }
@@ -741,7 +754,6 @@ LatteCMDPtr LatteCP_itDrawIndexAuto(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 	cemu_assert_debug(nWords == 2);
 	uint32 count = LatteReadCMD();
 	uint32 ukn = LatteReadCMD();
-	LatteGPUState.currentDrawCallTick = GetTickCount();
 	// todo - better way to identify compute drawcalls
 	auto& sqConfig = LatteGPUState.contextNew.SQ_CONFIG;
 	if (sqConfig.get_PS_PRIO() == 0 && sqConfig.get_VS_PRIO() == 1 && sqConfig.get_GS_PRIO() == 2 && sqConfig.get_ES_PRIO() == 3)
@@ -767,7 +779,6 @@ LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 	// reserve array for index data	
 	if (_tempIndexArrayMPTR == MPTR_NULL)
 		_tempIndexArrayMPTR = coreinit_allocFromSysArea(0x4000 * sizeof(uint32), 0x4);
-	LatteGPUState.currentDrawCallTick = GetTickCount();
 	// calculate size of index data in packet and read indices
 	uint32 numIndexU32s;
 	auto indexType = LatteGPUState.contextNew.VGT_DMA_INDEX_TYPE.get_INDEX_TYPE();

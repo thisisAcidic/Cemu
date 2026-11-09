@@ -704,8 +704,8 @@ void IMLOptimizer_StandardOptimizationPassForSegment(IMLOptimizerRegIOAnalysis& 
 {
 	IMLOptimizer_RemoveDeadCodeFromSegment(regIoAnalysis, seg);
 
-#ifdef ARCH_X86_64
-	// x86 specific optimizations
+#if defined(ARCH_X86_64) || defined(__aarch64__)
+	// x86 specific optimizations, AArch64 has condition flags as well and emits the eflags instructions as cmp + b.cond
 	IMLOptimizerX86_SubstituteCJumpForEflagsJump(regIoAnalysis, seg); // this pass should be applied late since it creates invisible eflags dependencies (which would break further register dependency analysis)
 #endif
 }

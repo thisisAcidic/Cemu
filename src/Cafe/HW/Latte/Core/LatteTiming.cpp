@@ -152,6 +152,14 @@ void LatteTiming_NotifyHostVSync()
 	LatteTiming_signalVsync();
 }
 
+std::chrono::microseconds LatteTiming_GetTimeUntilTimedVsync()
+{
+	uint64 currentTimer = HighResolutionTimer::now().getTick();
+	if (currentTimer >= LatteGPUState.timer_nextVSync)
+		return std::chrono::microseconds(0);
+	return std::chrono::microseconds((LatteGPUState.timer_nextVSync - currentTimer) * 1000000 / LatteGPUState.timer_frequency);
+}
+
 // handle timed vsync event
 void LatteTiming_HandleTimedVsync()
 {

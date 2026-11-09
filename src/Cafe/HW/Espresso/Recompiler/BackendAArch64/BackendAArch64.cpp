@@ -17,6 +17,9 @@
 
 using namespace Xbyak_aarch64;
 
+// remainingCycles of the current PPCInterpreter_t is kept in this register while recompiled code runs
+// and is only written back before calling into the emulator
+constexpr uint32 CYCLES_REG_ID = 24;
 constexpr uint32 TEMP_GPR_1_ID = 25;
 constexpr uint32 TEMP_GPR_2_ID = 26;
 constexpr uint32 PPC_RECOMPILER_INSTANCE_DATA_REG_ID = 27;
@@ -52,6 +55,7 @@ struct GPReg
 };
 
 static const XReg HCPU_REG{HCPU_REG_ID}, PPC_REC_INSTANCE_REG{PPC_RECOMPILER_INSTANCE_DATA_REG_ID}, MEM_BASE_REG{MEMORY_BASE_REG_ID};
+static const WReg CYCLES_REG{CYCLES_REG_ID};
 static const GPReg TEMP_GPR1{TEMP_GPR_1_ID};
 static const GPReg TEMP_GPR2{TEMP_GPR_2_ID};
 static const GPReg LR{TEMP_GPR_2_ID};
@@ -115,10 +119,17 @@ struct NegativeRegValueJumpInfo
 	WReg regValue;
 };
 
+struct ConditionalFlagsJumpInfo
+{
+	IMLSegment* target;
+	Cond cond;
+};
+
 using JumpInfo = std::variant<
 	UnconditionalJumpInfo,
 	ConditionalRegJumpInfo,
-	NegativeRegValueJumpInfo>;
+	NegativeRegValueJumpInfo,
+	ConditionalFlagsJumpInfo>;
 
 struct AArch64GenContext_t : CodeGenerator
 {
@@ -134,8 +145,8 @@ struct AArch64GenContext_t : CodeGenerator
 	bool r_r_s32_carry(IMLInstruction* imlInstruction);
 	bool r_r_r(IMLInstruction* imlInstruction);
 	bool r_r_r_carry(IMLInstruction* imlInstruction);
-	void compare(IMLInstruction* imlInstruction);
-	void compare_s32(IMLInstruction* imlInstruction);
+	size_t compare(const std::vector<IMLInstruction>& imlList, size_t index);
+	AdrExt guestAddress(WReg memReg, sint32 memOffset, const WReg* indexReg);
 	bool load(IMLInstruction* imlInstruction, bool indexed);
 	bool store(IMLInstruction* imlInstruction, bool indexed);
 	void atomic_cmp_store(IMLInstruction* imlInstruction);
@@ -149,15 +160,17 @@ struct AArch64GenContext_t : CodeGenerator
 	void fpr_r(IMLInstruction* imlInstruction);
 	void fpr_compare(IMLInstruction* imlInstruction);
 	void cjump(IMLInstruction* imlInstruction, IMLSegment* imlSegment);
+	void flagsJump(IMLInstruction* imlInstruction, IMLSegment* imlSegment);
 	void jump(IMLSegment* imlSegment);
 	void conditionalJumpCycleCheck(IMLSegment* imlSegment);
 
-	static constexpr size_t MAX_JUMP_INSTR_COUNT = 2;
+	// instructions reserved per jump. Most jumps fit into one, functions with jumps that don't are generated again with two
+	size_t m_jumpInstrCount = 1;
 	std::list<std::pair<size_t, JumpInfo>> jumps;
 	void prepareJump(JumpInfo&& jumpInfo)
 	{
 		jumps.emplace_back(getSize(), jumpInfo);
-		for (int i = 0; i < MAX_JUMP_INSTR_COUNT; ++i)
+		for (size_t i = 0; i < m_jumpInstrCount; ++i)
 			nop();
 	}
 
@@ -170,8 +183,9 @@ struct AArch64GenContext_t : CodeGenerator
 		segmentStarts[imlSegment] = getSize();
 	}
 
-	bool processAllJumps()
+	bool processAllJumps(bool& needsMoreJumpInstructions)
 	{
+		needsMoreJumpInstructions = false;
 		for (auto jump : jumps)
 		{
 			auto jumpStart = jump.first;
@@ -186,6 +200,11 @@ struct AArch64GenContext_t : CodeGenerator
 				jumpInfo);
 			if (!success)
 			{
+				return false;
+			}
+			if (getSize() - jumpStart > m_jumpInstrCount * CSIZE)
+			{
+				needsMoreJumpInstructions = true;
 				return false;
 			}
 		}
@@ -235,6 +254,32 @@ struct AArch64GenContext_t : CodeGenerator
 			tbz(jump.regBool, 0, skipJump);
 		else
 			tbnz(jump.regBool, 0, skipJump);
+		addressOffset -= 4;
+
+		// in +/-128MB
+		if (-0x8000000 <= addressOffset && addressOffset <= 0x7ffffff)
+		{
+			b(addressOffset);
+			L(skipJump);
+			return true;
+		}
+
+		cemu_assert_suspicious();
+
+		return false;
+	}
+
+	bool handleJump(sint64 addressOffset, const ConditionalFlagsJumpInfo& jump)
+	{
+		// in +/-1MB
+		if (-0x100000 <= addressOffset && addressOffset <= 0xfffff)
+		{
+			b(jump.cond, addressOffset);
+			return true;
+		}
+
+		Label skipJump;
+		b(static_cast<Cond>(jump.cond ^ 1), skipJump); // inverted condition
 		addressOffset -= 4;
 
 		// in +/-128MB
@@ -574,6 +619,10 @@ bool AArch64GenContext_t::r_r(IMLInstruction* imlInstruction)
 	{
 		clz(regR, regA);
 	}
+	else if (imlInstruction->operation == IMLOperation::OP_X86_CMP)
+	{
+		cmp(regR, regA);
+	}
 	else
 	{
 		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r(): Unsupported operation {:x}", static_cast<uint32>(imlInstruction->operation));
@@ -594,6 +643,10 @@ bool AArch64GenContext_t::r_s32(IMLInstruction* imlInstruction)
 	else if (imlInstruction->operation == IMLOperation::OP_LEFT_ROTATE)
 	{
 		ror(reg, reg, 32 - (imm32 & 0x1f));
+	}
+	else if (imlInstruction->operation == IMLOperation::OP_X86_CMP)
+	{
+		cmp_imm(reg, imm32, TEMP_GPR1.WReg);
 	}
 	else
 	{
@@ -619,18 +672,15 @@ bool AArch64GenContext_t::r_r_s32(IMLInstruction* imlInstruction)
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_AND)
 	{
-		mov(TEMP_GPR1.WReg, immS32);
-		and_(regR, regA, TEMP_GPR1.WReg);
+		and_imm(regR, regA, (uint32)immS32, TEMP_GPR1.WReg);
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_OR)
 	{
-		mov(TEMP_GPR1.WReg, immS32);
-		orr(regR, regA, TEMP_GPR1.WReg);
+		orr_imm(regR, regA, (uint32)immS32, TEMP_GPR1.WReg);
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_XOR)
 	{
-		mov(TEMP_GPR1.WReg, immS32);
-		eor(regR, regA, TEMP_GPR1.WReg);
+		eor_imm(regR, regA, (uint32)immS32, TEMP_GPR1.WReg);
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_MULTIPLY_SIGNED)
 	{
@@ -842,24 +892,35 @@ Cond ImlCondToArm64Cond(IMLCondition condition)
 	}
 }
 
-void AArch64GenContext_t::compare(IMLInstruction* imlInstruction)
+static bool IsSameCompare(const IMLInstruction& a, const IMLInstruction& b)
 {
-	WReg regR = gpReg<WReg>(imlInstruction->op_compare.regR);
-	WReg regA = gpReg<WReg>(imlInstruction->op_compare.regA);
-	WReg regB = gpReg<WReg>(imlInstruction->op_compare.regB);
-	Cond cond = ImlCondToArm64Cond(imlInstruction->op_compare.cond);
-	cmp(regA, regB);
-	cset(regR, cond);
+	if (a.type != b.type)
+		return false;
+	if (a.type == IMLType::COMPARE)
+		return a.op_compare.regA == b.op_compare.regA && a.op_compare.regB == b.op_compare.regB;
+	return a.op_compare_s32.regA == b.op_compare_s32.regA && a.op_compare_s32.immS32 == b.op_compare_s32.immS32;
 }
 
-void AArch64GenContext_t::compare_s32(IMLInstruction* imlInstruction)
+// PPC compares set the lt, gt and eq bits from the same operands, consecutive compares share one cmp
+// returns the number of compare instructions handled
+size_t AArch64GenContext_t::compare(const std::vector<IMLInstruction>& imlList, size_t index)
 {
-	WReg regR = gpReg<WReg>(imlInstruction->op_compare.regR);
-	WReg regA = gpReg<WReg>(imlInstruction->op_compare.regA);
-	sint32 imm = imlInstruction->op_compare_s32.immS32;
-	auto cond = ImlCondToArm64Cond(imlInstruction->op_compare.cond);
-	cmp_imm(regA, imm, TEMP_GPR1.WReg);
-	cset(regR, cond);
+	const IMLInstruction& first = imlList[index];
+	if (first.type == IMLType::COMPARE)
+		cmp(gpReg<WReg>(first.op_compare.regA), gpReg<WReg>(first.op_compare.regB));
+	else
+		cmp_imm(gpReg<WReg>(first.op_compare_s32.regA), first.op_compare_s32.immS32, TEMP_GPR1.WReg);
+	size_t count = 0;
+	while (index + count < imlList.size() && count < 4 && IsSameCompare(first, imlList[index + count]))
+	{
+		const IMLInstruction& compare = imlList[index + count];
+		if (compare.type == IMLType::COMPARE)
+			cset(gpReg<WReg>(compare.op_compare.regR), ImlCondToArm64Cond(compare.op_compare.cond));
+		else
+			cset(gpReg<WReg>(compare.op_compare_s32.regR), ImlCondToArm64Cond(compare.op_compare_s32.cond));
+		count++;
+	}
+	return count;
 }
 
 void AArch64GenContext_t::cjump(IMLInstruction* imlInstruction, IMLSegment* imlSegment)
@@ -872,6 +933,18 @@ void AArch64GenContext_t::cjump(IMLInstruction* imlInstruction, IMLSegment* imlS
 	});
 }
 
+// conditional jump on the flags set by an OP_X86_CMP right before it
+void AArch64GenContext_t::flagsJump(IMLInstruction* imlInstruction, IMLSegment* imlSegment)
+{
+	Cond cond = ImlCondToArm64Cond(imlInstruction->op_x86_eflags_jcc.cond);
+	if (imlInstruction->op_x86_eflags_jcc.invertedCondition)
+		cond = static_cast<Cond>(cond ^ 1);
+	prepareJump(ConditionalFlagsJumpInfo{
+		.target = imlSegment->nextSegmentBranchTaken,
+		.cond = cond,
+	});
+}
+
 void AArch64GenContext_t::jump(IMLSegment* imlSegment)
 {
 	prepareJump(UnconditionalJumpInfo{.target = imlSegment->nextSegmentBranchTaken});
@@ -879,10 +952,9 @@ void AArch64GenContext_t::jump(IMLSegment* imlSegment)
 
 void AArch64GenContext_t::conditionalJumpCycleCheck(IMLSegment* imlSegment)
 {
-	ldr(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 	prepareJump(NegativeRegValueJumpInfo{
 		.target = imlSegment->nextSegmentBranchTaken,
-		.regValue = TEMP_GPR1.WReg,
+		.regValue = CYCLES_REG,
 	});
 }
 
@@ -961,10 +1033,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 	else if (imlInstruction->operation == IMLOperation::MACRO_COUNT_CYCLES)
 	{
 		uint32 cycleCount = imlInstruction->op_macro.param;
-		AdrUimm adrCycles = AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles));
-		ldr(TEMP_GPR1.WReg, adrCycles);
-		sub_imm(TEMP_GPR1.WReg, TEMP_GPR1.WReg, cycleCount, TEMP_GPR2.WReg);
-		str(TEMP_GPR1.WReg, adrCycles);
+		sub_imm(CYCLES_REG, CYCLES_REG, cycleCount, TEMP_GPR1.WReg);
 		return true;
 	}
 	else if (imlInstruction->operation == IMLOperation::MACRO_HLE)
@@ -976,6 +1045,8 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		// update instruction pointer
 		mov(TEMP_GPR1.WReg, ppcAddress);
 		str(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, instructionPointer)));
+		// the HLE function can read and change the remaining cycles or switch to another thread
+		str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 		// set parameters
 		str(x30, AdrPreImm(sp, -16));
 
@@ -991,8 +1062,8 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		ldr(x30, AdrPostImm(sp, 16));
 
 		// check if cycles where decreased beyond zero, if yes -> leave recompiler
-		ldr(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
-		tbz(TEMP_GPR1.WReg, 31, cyclesLeftLabel); // check if negative
+		ldr(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
+		tbz(CYCLES_REG, 31, cyclesLeftLabel); // check if negative
 
 		mov(TEMP_GPR1.XReg, offsetof(PPCRecompilerInstanceData_t, ppcRecompilerDirectJumpTable));
 		ldr(TEMP_GPR1.XReg, AdrReg(PPC_REC_INSTANCE_REG, TEMP_GPR1.XReg));
@@ -1019,6 +1090,24 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 	return false;
 }
 
+// guest addresses wrap around at 32 bits, so offset and index are added before the address is zero-extended
+AdrExt AArch64GenContext_t::guestAddress(WReg memReg, sint32 memOffset, const WReg* indexReg)
+{
+	if (memOffset == 0 && !indexReg)
+		return AdrExt(MEM_BASE_REG, memReg, ExtMod::UXTW);
+	if (memOffset == 0)
+	{
+		add(TEMP_GPR1.WReg, memReg, *indexReg);
+	}
+	else
+	{
+		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
+		if (indexReg)
+			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, *indexReg);
+	}
+	return AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW);
+}
+
 bool AArch64GenContext_t::load(IMLInstruction* imlInstruction, bool indexed)
 {
 	cemu_assert_debug(imlInstruction->op_storeLoad.registerData.GetRegFormat() == IMLRegFormat::I32);
@@ -1031,12 +1120,9 @@ bool AArch64GenContext_t::load(IMLInstruction* imlInstruction, bool indexed)
 	bool switchEndian = imlInstruction->op_storeLoad.flags2.swapEndian;
 	WReg memReg = gpReg<WReg>(imlInstruction->op_storeLoad.registerMem);
 	WReg dataReg = gpReg<WReg>(imlInstruction->op_storeLoad.registerData);
+	WReg indexReg = indexed ? gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2) : wzr;
 
-	add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-	if (indexed)
-		add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2));
-
-	auto adr = AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW);
+	auto adr = guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr);
 	if (imlInstruction->op_storeLoad.copyWidth == 32)
 	{
 		ldr(dataReg, adr);
@@ -1048,11 +1134,10 @@ bool AArch64GenContext_t::load(IMLInstruction* imlInstruction, bool indexed)
 		if (switchEndian)
 		{
 			ldrh(dataReg, adr);
-			rev(dataReg, dataReg);
+			// the upper half is zero, so swapping the bytes of both halves leaves it zero
+			rev16(dataReg, dataReg);
 			if (signExtend)
-				asr(dataReg, dataReg, 16);
-			else
-				lsr(dataReg, dataReg, 16);
+				sxth(dataReg, dataReg);
 		}
 		else
 		{
@@ -1087,11 +1172,9 @@ bool AArch64GenContext_t::store(IMLInstruction* imlInstruction, bool indexed)
 	WReg memReg = gpReg<WReg>(imlInstruction->op_storeLoad.registerMem);
 	sint32 memOffset = imlInstruction->op_storeLoad.immS32;
 	bool swapEndian = imlInstruction->op_storeLoad.flags2.swapEndian;
+	WReg indexReg = indexed ? gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2) : wzr;
 
-	add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-	if (indexed)
-		add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2));
-	AdrExt adr = AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW);
+	AdrExt adr = guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr);
 	if (imlInstruction->op_storeLoad.copyWidth == 32)
 	{
 		if (swapEndian)
@@ -1108,8 +1191,7 @@ bool AArch64GenContext_t::store(IMLInstruction* imlInstruction, bool indexed)
 	{
 		if (swapEndian)
 		{
-			rev(TEMP_GPR2.WReg, dataReg);
-			lsr(TEMP_GPR2.WReg, TEMP_GPR2.WReg, 16);
+			rev16(TEMP_GPR2.WReg, dataReg);
 			strh(TEMP_GPR2.WReg, adr);
 		}
 		else
@@ -1173,12 +1255,9 @@ bool AArch64GenContext_t::fpr_load(IMLInstruction* imlInstruction, bool indexed)
 
 	if (mode == PPCREC_FPR_LD_MODE_SINGLE)
 	{
-		add_imm(TEMP_GPR1.WReg, realRegisterMem, adrOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		ldr(TEMP_GPR2.WReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
-		rev(TEMP_GPR2.WReg, TEMP_GPR2.WReg);
-		fmov(dataSReg, TEMP_GPR2.WReg);
+		// loading into the FP register and swapping there avoids a transfer from a general purpose register
+		ldr(dataSReg, guestAddress(realRegisterMem, adrOffset, indexed ? &indexReg : nullptr));
+		rev32(VReg8B(dataSReg.getIdx()), VReg8B(dataSReg.getIdx()));
 
 		if (imlInstruction->op_storeLoad.flags2.notExpanded)
 		{
@@ -1191,12 +1270,8 @@ bool AArch64GenContext_t::fpr_load(IMLInstruction* imlInstruction, bool indexed)
 	}
 	else if (mode == PPCREC_FPR_LD_MODE_DOUBLE)
 	{
-		add_imm(TEMP_GPR1.WReg, realRegisterMem, adrOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		ldr(TEMP_GPR2.XReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
-		rev(TEMP_GPR2.XReg, TEMP_GPR2.XReg);
-		fmov(dataDReg, TEMP_GPR2.XReg);
+		ldr(dataDReg, guestAddress(realRegisterMem, adrOffset, indexed ? &indexReg : nullptr));
+		rev64(VReg8B(dataDReg.getIdx()), VReg8B(dataDReg.getIdx()));
 	}
 	else
 	{
@@ -1256,29 +1331,18 @@ bool AArch64GenContext_t::fpr_store(IMLInstruction* imlInstruction, bool indexed
 				b(done);
 			});
 		}
-		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
 		rev(TEMP_GPR2.WReg, TEMP_GPR2.WReg);
-		str(TEMP_GPR2.WReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
+		str(TEMP_GPR2.WReg, guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr));
 	}
 	else if (mode == PPCREC_FPR_ST_MODE_DOUBLE)
 	{
-		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		fmov(TEMP_GPR2.XReg, dataDReg);
-		rev(TEMP_GPR2.XReg, TEMP_GPR2.XReg);
-		str(TEMP_GPR2.XReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
+		rev64(TEMP_FPR.VReg.b8, VReg8B(dataDReg.getIdx()));
+		str(TEMP_FPR.DReg, guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr));
 	}
 	else if (mode == PPCREC_FPR_ST_MODE_UI32_FROM_PS0)
 	{
-		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		fmov(TEMP_GPR2.WReg, dataSReg);
-		rev(TEMP_GPR2.WReg, TEMP_GPR2.WReg);
-		str(TEMP_GPR2.WReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
+		rev32(TEMP_FPR.VReg.b8, VReg8B(dataSReg.getIdx()));
+		str(TEMP_FPR.SReg, guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr));
 	}
 	else
 	{
@@ -1478,16 +1542,19 @@ void AArch64GenContext_t::fpr_compare(IMLInstruction* imlInstruction)
 
 void AArch64GenContext_t::call_imm(IMLInstruction* imlInstruction)
 {
+	// the helpers called here don't access the remaining cycles and CYCLES_REG is callee-saved, so it doesn't need to be written back
 	str(x30, AdrPreImm(sp, -16));
 	mov(TEMP_GPR1.XReg, imlInstruction->op_call_imm.callAddress);
 	blr(TEMP_GPR1.XReg);
 	ldr(x30, AdrPostImm(sp, 16));
 }
 
-bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
+static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext, size_t jumpInstrCount, bool& needsMoreJumpInstructions)
 {
 	AArch64Allocator allocator;
 	AArch64GenContext_t aarch64GenContext{&allocator};
+	aarch64GenContext.m_jumpInstrCount = jumpInstrCount;
+	needsMoreJumpInstructions = false;
 
 	// generate iml instruction code
 	bool codeGenerationFailed = false;
@@ -1540,17 +1607,17 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 				if (!aarch64GenContext.r_r_r_carry(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == IMLType::COMPARE)
+			else if (imlInstruction->type == IMLType::COMPARE || imlInstruction->type == IMLType::COMPARE_S32)
 			{
-				aarch64GenContext.compare(imlInstruction);
-			}
-			else if (imlInstruction->type == IMLType::COMPARE_S32)
-			{
-				aarch64GenContext.compare_s32(imlInstruction);
+				i += aarch64GenContext.compare(segIt->imlList, i) - 1;
 			}
 			else if (imlInstruction->type == IMLType::CONDITIONAL_JUMP)
 			{
 				aarch64GenContext.cjump(imlInstruction, segIt);
+			}
+			else if (imlInstruction->type == IMLType::X86_EFLAGS_JCC)
+			{
+				aarch64GenContext.flagsJump(imlInstruction, segIt);
 			}
 			else if (imlInstruction->type == IMLType::JUMP)
 			{
@@ -1656,9 +1723,10 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 		aarch64GenContext.m_coldCode[i]();
 
 	const size_t codeSize = aarch64GenContext.getSize();
-	if (!aarch64GenContext.processAllJumps())
+	if (!aarch64GenContext.processAllJumps(needsMoreJumpInstructions))
 	{
-		cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): some jumps exceeded the +/-128MB offset.");
+		if (!needsMoreJumpInstructions)
+			cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): some jumps exceeded the +/-128MB offset.");
 		return false;
 	}
 	aarch64GenContext.setSize(codeSize);
@@ -1671,6 +1739,16 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 	// set free disabled to skip freeing the code from the CodeGenerator destructor
 	allocator.setFreeDisabled(true);
 	return true;
+}
+
+bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
+{
+	bool needsMoreJumpInstructions;
+	if (PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 1, needsMoreJumpInstructions))
+		return true;
+	if (!needsMoreJumpInstructions)
+		return false;
+	return PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 2, needsMoreJumpInstructions);
 }
 
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
@@ -1697,6 +1775,7 @@ void AArch64GenContext_t::enterRecompilerCode()
 	st4((v8.d - v11.d)[0], AdrPostImm(x9, 32));
 	st4((v12.d - v15.d)[0], AdrPostImm(x9, 32));
 	mov(HCPU_REG, x1); // call argument 2
+	ldr(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 	mov(PPC_REC_INSTANCE_REG, (uint64)ppcRecompilerInstanceData);
 	mov(MEM_BASE_REG, (uint64)memory_base);
 
@@ -1721,6 +1800,7 @@ void AArch64GenContext_t::enterRecompilerCode()
 void AArch64GenContext_t::leaveRecompilerCode()
 {
 	str(LR.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, instructionPointer)));
+	str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
 	ret();
 }
 

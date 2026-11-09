@@ -246,6 +246,36 @@ bool Latte_GetStopSignal()
 	return !sLatteThreadRunning;
 }
 
+static std::atomic<uint32> s_wakeUpCounter{0};
+static std::atomic<bool> s_isSleeping{false};
+static std::mutex s_sleepMutex;
+static std::condition_variable s_sleepCondition;
+
+uint32 LatteThread_GetWakeUpCounter()
+{
+	return s_wakeUpCounter.load();
+}
+
+void LatteThread_Sleep(uint32 wakeUpCounter, std::chrono::microseconds timeout)
+{
+	std::unique_lock lock(s_sleepMutex);
+	s_isSleeping.store(true);
+	if (s_wakeUpCounter.load() == wakeUpCounter)
+		s_sleepCondition.wait_for(lock, timeout);
+	s_isSleeping.store(false);
+}
+
+void LatteThread_WakeUp()
+{
+	s_wakeUpCounter.fetch_add(1);
+	// pairs with the store and load in LatteThread_Sleep, either the GPU thread sees the new counter or this sees it sleeping
+	if (s_isSleeping.load())
+	{
+		std::lock_guard lock(s_sleepMutex);
+		s_sleepCondition.notify_one();
+	}
+}
+
 void LatteThread_Exit()
 {
 	if (g_renderer)

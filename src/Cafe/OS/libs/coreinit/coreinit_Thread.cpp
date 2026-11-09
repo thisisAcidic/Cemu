@@ -9,6 +9,7 @@
 #include "Cafe/HW/Espresso/Debugger/GDBStub.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
+#include "config/ActiveSettings.h"
 
 #include "util/helpers/Semaphore.h"
 #include "util/helpers/ConcurrentQueue.h"
@@ -1279,6 +1280,37 @@ namespace coreinit
 		nnNfp_update();
 	}
 
+	// how long the main core keeps polling before it sleeps
+	constexpr uint64 IDLE_SPIN_MICROSECONDS = 50;
+	// audio output is polled by the idle loop as well and needs an update every 3ms
+	constexpr uint64 IDLE_MAX_WAIT_MICROSECONDS = 500;
+
+	// sleep until a thread becomes runnable or the next alarm is due
+	static void __OSMainCoreIdleWait(uint64& idleStartTsc)
+	{
+		const uint64 currentTsc = PPCTimer_getRawTsc();
+		if (idleStartTsc == 0)
+			idleStartTsc = currentTsc;
+		if (currentTsc - idleStartTsc < PPCTimer_microsecondsToTsc(IDLE_SPIN_MICROSECONDS))
+			return;
+		const uint64 currentTick = coreinit::OSGetTime();
+		g_coreRunQueueThreadCount[1].waitUntilNonZeroOrNotified([currentTick]() {
+			const uint64 soonestAlarm = alarm_getSoonestFireTick();
+			if (soonestAlarm <= currentTick)
+				return std::chrono::microseconds(0);
+			constexpr uint64 ticksPerMicrosecond = Espresso::TIMER_CLOCK / 1000000;
+			uint64 ticks = std::min(soonestAlarm - currentTick, IDLE_MAX_WAIT_MICROSECONDS * ticksPerMicrosecond * 8);
+			// emulated time runs faster or slower when the timer speed is changed
+			ticks = (ticks << ActiveSettings::GetTimerShiftFactor()) >> 3;
+			return std::chrono::microseconds(std::min(ticks / ticksPerMicrosecond, IDLE_MAX_WAIT_MICROSECONDS));
+		});
+	}
+
+	void __OSWakeIdleMainCore()
+	{
+		g_coreRunQueueThreadCount[1].notify();
+	}
+
 	Fiber* g_idleLoopFiber[3]{};
 
 	// idle fiber per core if no thread is runnable
@@ -1287,6 +1319,7 @@ namespace coreinit
 	{
 		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
+		uint64 idleStartTsc = 0;
 		__OSUnlockScheduler();
 		while (true)
 		{
@@ -1298,6 +1331,7 @@ namespace coreinit
 				{
 					cemu_assert_debug(nextThread->state == OSThread_t::THREAD_STATE::STATE_RUNNING);
 					__OSSwitchToThreadFiber(nextThread, coreIndex);
+					idleStartTsc = 0;
 				}
 				__OSUnlockScheduler();
 			}
@@ -1306,6 +1340,8 @@ namespace coreinit
 				__OSCheckSystemEvents();
 				if(g_isMulticoreMode == false)
 					coreIndex = (coreIndex + 1) % 3;
+				else
+					__OSMainCoreIdleWait(idleStartTsc);
 			}
 			else
 			{

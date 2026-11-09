@@ -30,7 +30,7 @@ struct LatteGPUState_t
 	// stats
 	uint32 frameCounter;
 	uint32 flipCounter; // increased by one everytime a vsync + flip happens
-	uint32 currentDrawCallTick; // set to current time at the beginning of a drawcall
+	uint32 currentDrawCallTick; // set to current time at the end of every frame
 	uint32 drawCallCounter; // increased after every drawcall
 	uint32 textureBindCounter; // increased at the beginning of _updateTextures()
 	std::atomic<uint64> flipRequestCount;
@@ -162,6 +162,7 @@ void LatteStreamout_FinishDrawcall(bool useDirectMemoryMode);
 
 void LatteTiming_Init();
 void LatteTiming_HandleTimedVsync();
+std::chrono::microseconds LatteTiming_GetTimeUntilTimedVsync();
 
 // command processor
 
@@ -186,3 +187,8 @@ void Latte_Start();
 void Latte_Stop();
 bool Latte_GetStopSignal(); // returns true if stop was requested or if in stopped state
 void LatteThread_Exit();
+
+// the GPU thread sleeps while it has nothing to do, anything that hands it work has to wake it up
+uint32 LatteThread_GetWakeUpCounter();
+void LatteThread_Sleep(uint32 wakeUpCounter, std::chrono::microseconds timeout); // returns early if woken up after the counter was read
+void LatteThread_WakeUp();

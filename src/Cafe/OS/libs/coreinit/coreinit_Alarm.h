@@ -62,6 +62,7 @@ namespace coreinit
 	void OSAlarm_Shutdown();
 
 	void alarm_update();
+	uint64 alarm_getSoonestFireTick();
 
 	void MapAlarmExports();
 	void InitializeAlarm();
