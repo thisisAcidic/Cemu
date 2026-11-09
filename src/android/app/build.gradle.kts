@@ -108,6 +108,11 @@ android {
                 }
             }
         }
+        create("fork") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".fork"
+            matchingFallbacks += listOf("release")
+        }
     }
 
     externalNativeBuild {
