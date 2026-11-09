@@ -104,5 +104,27 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 - `sched_setattr` mit `SCHED_FLAG_UTIL_CLAMP_MAX` aus der App: „Operation not permitted“. Ohne Root nicht nutzbar. Offen bleibt die ADPF-Schnittstelle (Performance Hints).
 - Streuung zweier gleicher Builds (r8-dev-819 und r8-clamp-819, wirkungslos): 8,82 gegen 9,01 W, also rund 0,2 W.
 
+## Grundlast und Ziel
+
+- Cocoon im Leerlauf, beide Bildschirme an (Helligkeit 184/255): **2,08 W**. Darin steckt auch der dauerhaft auf Höchsttakt stehende DDR-Speicher.
+- Ziel unter 7 W heißt: Der Emulator darf rund 4,9 W zusätzlich verbrauchen.
+
+## Rücksprung-Vorhersage (perf/return-prediction)
+
+- Gast-Aufrufe liefen über `br`, Rücksprünge damit über die indirekte Sprungvorhersage. Jetzt `blr` für Aufrufe und `ret` für Rücksprünge, damit greift der Return-Address-Stack der CPU. Die Rückkehradresse aus dem JIT-Code liegt dafür auf dem Stack statt in x30.
+- r9-ret (dev + Rücksprung-Vorhersage): **8,23 W** (dev-Läufe 8,82/9,01 W), CPU im Messfenster 67,4 °C statt 71–72 °C, Spiel fehlerfrei. Weniger Fehlvorhersagen heißt weniger spekulativ verworfene Arbeit bei gleichem Takt.
+
+## Code-Layout (perf/code-arena)
+
+- Profil r9-padauto-jit: 20,7 % der JIT-Samples landen auf dem ersten Befehl einer Funktion (meist `sub w24`), 13,8 Prozentpunkte davon am Funktionsanfang selbst. Das sind die Kosten des Sprungs in die Funktion, nicht der Befehl.
+- Ursache: Jede der 23.861 übersetzten Funktionen hatte eine eigene Allokation und begann auf einer eigenen 4-KB-Seite (Median-Abstand der Funktionsanfänge genau 4096 Byte, 125 MB Puffer, großteils Füllung). Jeder Aufruf traf eine neue Seite (iTLB), und alle Funktionsanfänge lagen auf demselben Seiten-Offset (dieselben Cache-Sätze).
+- Fix: Funktionen werden in 4-MB-Blöcke ausführbaren Speichers kopiert, auf Cache-Zeilen ausgerichtet. Fallback auf getrennte Allokationen, falls kein solcher Speicher gemappt werden kann.
+
+## Flackern mit Dual Screen (fix/backbuffer-quad-scissor)
+
+- Beobachtung des Nutzers: Welt, Schatten und FPS-Anzeige flackern leicht und unregelmäßig.
+- Ursache: Das GamePad-Bild wird in den zweiten Bildschirm kopiert, sobald das Spiel es kopiert, also mitten im Bild. Dabei wurde das Scissor-Rechteck auf die Fenstergröße gesetzt und nicht zurückgestellt. Cemu setzt es nur neu, wenn das Spiel seine Scissor-Register ändert. Bis dahin wurden die folgenden Draws abgeschnitten. Meine Kachel-Hash-Prüfung für unveränderte GamePad-Bilder hatte denselben Fehler mit einem viel kleineren Rechteck und verstärkte es stark.
+- Fix: Viewport und Scissor werden nach beiden Durchgängen wiederhergestellt, die Deskriptor-Sets beim nächsten Draw neu gebunden. Prüfung mit Bildschirmaufnahme einer ruhenden Szene (Werkzeug `flicker_test.sh`).
+
 ## Offen
 - Gast-Register an Blockgrenzen (13,5 %), Float-Umwandlungen (10 %).
