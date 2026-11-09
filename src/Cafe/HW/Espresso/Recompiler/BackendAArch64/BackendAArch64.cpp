@@ -136,6 +136,7 @@ struct AArch64GenContext_t : CodeGenerator
 	bool r_r_r_carry(IMLInstruction* imlInstruction);
 	void compare(IMLInstruction* imlInstruction);
 	void compare_s32(IMLInstruction* imlInstruction);
+	AdrExt guestAddress(WReg memReg, sint32 memOffset, const WReg* indexReg);
 	bool load(IMLInstruction* imlInstruction, bool indexed);
 	bool store(IMLInstruction* imlInstruction, bool indexed);
 	void atomic_cmp_store(IMLInstruction* imlInstruction);
@@ -619,18 +620,15 @@ bool AArch64GenContext_t::r_r_s32(IMLInstruction* imlInstruction)
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_AND)
 	{
-		mov(TEMP_GPR1.WReg, immS32);
-		and_(regR, regA, TEMP_GPR1.WReg);
+		and_imm(regR, regA, (uint32)immS32, TEMP_GPR1.WReg);
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_OR)
 	{
-		mov(TEMP_GPR1.WReg, immS32);
-		orr(regR, regA, TEMP_GPR1.WReg);
+		orr_imm(regR, regA, (uint32)immS32, TEMP_GPR1.WReg);
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_XOR)
 	{
-		mov(TEMP_GPR1.WReg, immS32);
-		eor(regR, regA, TEMP_GPR1.WReg);
+		eor_imm(regR, regA, (uint32)immS32, TEMP_GPR1.WReg);
 	}
 	else if (imlInstruction->operation == IMLOperation::OP_MULTIPLY_SIGNED)
 	{
@@ -1019,6 +1017,24 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 	return false;
 }
 
+// guest addresses wrap around at 32 bits, so offset and index are added before the address is zero-extended
+AdrExt AArch64GenContext_t::guestAddress(WReg memReg, sint32 memOffset, const WReg* indexReg)
+{
+	if (memOffset == 0 && !indexReg)
+		return AdrExt(MEM_BASE_REG, memReg, ExtMod::UXTW);
+	if (memOffset == 0)
+	{
+		add(TEMP_GPR1.WReg, memReg, *indexReg);
+	}
+	else
+	{
+		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
+		if (indexReg)
+			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, *indexReg);
+	}
+	return AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW);
+}
+
 bool AArch64GenContext_t::load(IMLInstruction* imlInstruction, bool indexed)
 {
 	cemu_assert_debug(imlInstruction->op_storeLoad.registerData.GetRegFormat() == IMLRegFormat::I32);
@@ -1031,12 +1047,9 @@ bool AArch64GenContext_t::load(IMLInstruction* imlInstruction, bool indexed)
 	bool switchEndian = imlInstruction->op_storeLoad.flags2.swapEndian;
 	WReg memReg = gpReg<WReg>(imlInstruction->op_storeLoad.registerMem);
 	WReg dataReg = gpReg<WReg>(imlInstruction->op_storeLoad.registerData);
+	WReg indexReg = indexed ? gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2) : wzr;
 
-	add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-	if (indexed)
-		add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2));
-
-	auto adr = AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW);
+	auto adr = guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr);
 	if (imlInstruction->op_storeLoad.copyWidth == 32)
 	{
 		ldr(dataReg, adr);
@@ -1048,11 +1061,10 @@ bool AArch64GenContext_t::load(IMLInstruction* imlInstruction, bool indexed)
 		if (switchEndian)
 		{
 			ldrh(dataReg, adr);
-			rev(dataReg, dataReg);
+			// the upper half is zero, so swapping the bytes of both halves leaves it zero
+			rev16(dataReg, dataReg);
 			if (signExtend)
-				asr(dataReg, dataReg, 16);
-			else
-				lsr(dataReg, dataReg, 16);
+				sxth(dataReg, dataReg);
 		}
 		else
 		{
@@ -1087,11 +1099,9 @@ bool AArch64GenContext_t::store(IMLInstruction* imlInstruction, bool indexed)
 	WReg memReg = gpReg<WReg>(imlInstruction->op_storeLoad.registerMem);
 	sint32 memOffset = imlInstruction->op_storeLoad.immS32;
 	bool swapEndian = imlInstruction->op_storeLoad.flags2.swapEndian;
+	WReg indexReg = indexed ? gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2) : wzr;
 
-	add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-	if (indexed)
-		add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, gpReg<WReg>(imlInstruction->op_storeLoad.registerMem2));
-	AdrExt adr = AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW);
+	AdrExt adr = guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr);
 	if (imlInstruction->op_storeLoad.copyWidth == 32)
 	{
 		if (swapEndian)
@@ -1108,8 +1118,7 @@ bool AArch64GenContext_t::store(IMLInstruction* imlInstruction, bool indexed)
 	{
 		if (swapEndian)
 		{
-			rev(TEMP_GPR2.WReg, dataReg);
-			lsr(TEMP_GPR2.WReg, TEMP_GPR2.WReg, 16);
+			rev16(TEMP_GPR2.WReg, dataReg);
 			strh(TEMP_GPR2.WReg, adr);
 		}
 		else
@@ -1173,12 +1182,9 @@ bool AArch64GenContext_t::fpr_load(IMLInstruction* imlInstruction, bool indexed)
 
 	if (mode == PPCREC_FPR_LD_MODE_SINGLE)
 	{
-		add_imm(TEMP_GPR1.WReg, realRegisterMem, adrOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		ldr(TEMP_GPR2.WReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
-		rev(TEMP_GPR2.WReg, TEMP_GPR2.WReg);
-		fmov(dataSReg, TEMP_GPR2.WReg);
+		// loading into the FP register and swapping there avoids a transfer from a general purpose register
+		ldr(dataSReg, guestAddress(realRegisterMem, adrOffset, indexed ? &indexReg : nullptr));
+		rev32(VReg8B(dataSReg.getIdx()), VReg8B(dataSReg.getIdx()));
 
 		if (imlInstruction->op_storeLoad.flags2.notExpanded)
 		{
@@ -1191,12 +1197,8 @@ bool AArch64GenContext_t::fpr_load(IMLInstruction* imlInstruction, bool indexed)
 	}
 	else if (mode == PPCREC_FPR_LD_MODE_DOUBLE)
 	{
-		add_imm(TEMP_GPR1.WReg, realRegisterMem, adrOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		ldr(TEMP_GPR2.XReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
-		rev(TEMP_GPR2.XReg, TEMP_GPR2.XReg);
-		fmov(dataDReg, TEMP_GPR2.XReg);
+		ldr(dataDReg, guestAddress(realRegisterMem, adrOffset, indexed ? &indexReg : nullptr));
+		rev64(VReg8B(dataDReg.getIdx()), VReg8B(dataDReg.getIdx()));
 	}
 	else
 	{
@@ -1256,29 +1258,18 @@ bool AArch64GenContext_t::fpr_store(IMLInstruction* imlInstruction, bool indexed
 				b(done);
 			});
 		}
-		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
 		rev(TEMP_GPR2.WReg, TEMP_GPR2.WReg);
-		str(TEMP_GPR2.WReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
+		str(TEMP_GPR2.WReg, guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr));
 	}
 	else if (mode == PPCREC_FPR_ST_MODE_DOUBLE)
 	{
-		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		fmov(TEMP_GPR2.XReg, dataDReg);
-		rev(TEMP_GPR2.XReg, TEMP_GPR2.XReg);
-		str(TEMP_GPR2.XReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
+		rev64(TEMP_FPR.VReg.b8, VReg8B(dataDReg.getIdx()));
+		str(TEMP_FPR.DReg, guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr));
 	}
 	else if (mode == PPCREC_FPR_ST_MODE_UI32_FROM_PS0)
 	{
-		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-		fmov(TEMP_GPR2.WReg, dataSReg);
-		rev(TEMP_GPR2.WReg, TEMP_GPR2.WReg);
-		str(TEMP_GPR2.WReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
+		rev32(TEMP_FPR.VReg.b8, VReg8B(dataSReg.getIdx()));
+		str(TEMP_FPR.SReg, guestAddress(memReg, memOffset, indexed ? &indexReg : nullptr));
 	}
 	else
 	{
