@@ -6,10 +6,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
+import info.cemu.cemu.common.settings.ExternalDisplayPadScreen
 import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.ui.components.Button
 import info.cemu.cemu.common.ui.components.ScreenContent
 import info.cemu.cemu.common.ui.components.SingleSelection
+import info.cemu.cemu.common.ui.components.Toggle
 import info.cemu.cemu.common.ui.localization.tr
 import info.cemu.cemu.nativeinterface.NativeSettings
 
@@ -68,7 +70,27 @@ fun GeneralSettingsScreen(
             choiceToString = { gamePadPositionToString(it) },
             choices = GamePadPosition.entries,
         )
+
+        Toggle(
+            label = tr("Swap screens"),
+            description = tr("Show the TV image on the second screen and the GamePad on the main screen"),
+            checked = emulationSettings.swapScreens,
+            onCheckedChanged = { viewModel.setSwapScreens(it) },
+        )
+
+        SingleSelection(
+            label = tr("GamePad screen when a TV is connected"),
+            choice = emulationSettings.externalDisplayPadScreen,
+            onChoiceChanged = { viewModel.setExternalDisplayPadScreen(it) },
+            choiceToString = { externalDisplayPadScreenToString(it) },
+            choices = ExternalDisplayPadScreen.entries,
+        )
     }
+}
+
+private fun externalDisplayPadScreenToString(screen: ExternalDisplayPadScreen) = when (screen) {
+    ExternalDisplayPadScreen.PRIMARY -> tr("Main screen")
+    ExternalDisplayPadScreen.SECONDARY -> tr("Second screen")
 }
 
 private fun gamePadPositionToString(position: GamePadPosition) = when (position) {

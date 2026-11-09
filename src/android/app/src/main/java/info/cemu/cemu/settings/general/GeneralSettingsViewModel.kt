@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import info.cemu.cemu.common.settings.AppSettings
 import info.cemu.cemu.common.settings.AppSettingsStore
 import info.cemu.cemu.common.settings.EmulationSettings
+import info.cemu.cemu.common.settings.ExternalDisplayPadScreen
 import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.settings.GuiSettings
 import info.cemu.cemu.common.ui.localization.getAvailableLanguages
@@ -45,6 +46,26 @@ class GeneralSettingsViewModel(
 
         viewModelScope.launch {
             dataStore.updateData { it.copy(guiSettings = it.guiSettings.copy(language = language)) }
+        }
+    }
+
+    fun setSwapScreens(swapScreens: Boolean) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                it.copy(emulationSettings = it.emulationSettings.copy(swapScreens = swapScreens))
+            }
+        }
+    }
+
+    fun setExternalDisplayPadScreen(externalDisplayPadScreen: ExternalDisplayPadScreen) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                it.copy(
+                    emulationSettings = it.emulationSettings.copy(
+                        externalDisplayPadScreen = externalDisplayPadScreen
+                    )
+                )
+            }
         }
     }
 
