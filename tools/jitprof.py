@@ -88,6 +88,10 @@ def main():
         per_offset[name][offset] += period
 
     print(f'{args.comm}: {total} cycles sampled, {100 * in_jit / max(total, 1):.1f} % in recompiled code')
+    in_llvm = sum(p for name, p in per_func.items() if name.endswith('_llvm'))
+    in_entry = sum(p for name, p in per_func.items() if name.endswith('_entry'))
+    if in_llvm:
+        print(f'  LLVM functions {100 * in_llvm / total:.1f} %, their entry points {100 * in_entry / total:.1f} %, native functions {100 * (in_jit - in_llvm - in_entry) / total:.1f} %')
     acc = 0
     for name, period in per_func.most_common(args.top):
         acc += period

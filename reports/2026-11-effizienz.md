@@ -175,5 +175,19 @@ Funktionstests (Hafen, System-Treiber, 15 s Aufnahme):
 | llvm2 (alle Operationen, Stack nicht volatile) | 18.000 | 17 ms | 902 Bilder, 0 fehlerhaft, aber 28 FPS beim Eintreffen, weil neuer Code bis zur Übersetzung interpretiert wird |
 | llvm4 (stufenweise, Liveness) | läuft im Hintergrund | 40 ms (kleiner Kern) | 57 FPS sofort im Hafen |
 
+Erste Leistungsmessungen (Hafen, System-Treiber, Akku):
+
+| Lauf | FPS | Leistung | Kern 1 | Prime-Takt | Bemerkung |
+|---|---|---|---|---|---|
+| r10-next-stock (JIT) | 59,8 | 8,78 W | 80 % | 1954 MHz | Referenz |
+| r11-llvm-warm | 38,4 | 9,23 W | 98 % | 3187 MHz | Fehler: jeder Gast-Rücksprung verließ den Recompiler |
+| r12-llvm-warm | 59,2 | 11,04 W | 91 % | 3187 MHz | nach der Übersetzung, Gerät 93 °C heiß |
+| r13-llvm-perf (mit simpleperf) | 59,3 | 10,20 W | 87 % | 3187 MHz | Cache warm |
+| r13-native-perf (mit simpleperf) | 59,8 | 9,26 W | 78 % | 2179 MHz | gleiches APK ohne LLVM |
+
+- Eine unabhängige Prüfung des Backends fand fünf Fehler: Rücksprünge (Code 3) wurden wegen Prüfung nur von Bit 0 als „Recompiler verlassen“ behandelt, `SetEndOfFile` löst unter Android SIGTRAP aus (Absturz beim zweiten Start mit Cache), absolute Adressen der C++-Helfer im Cache (ASLR), unvollständiger Cache-Schlüssel, `xor rX,rX,rX` auf ungeladenem Register. Alle behoben.
+- Profil r13 (Kern 1, 20 s): LLVM-Funktionen 33,7 Mrd. Takte gegenüber 36,2 Mrd. für den gesamten JIT-Code nativ, der Code selbst ist also rund 7 % besser. Die Einsprung-Thunks kosten aber weitere 12,1 Mrd. (23,6 %). Übergänge zwischen Funktionen fressen den Gewinn.
+- Daraus folgt Stufe 3: Gast-Aufrufe zwischen LLVM-Funktionen werden echte Host-Aufrufe (Cache pro Aufrufstelle, Generationszähler für Invalidierung, Tiefengrenze 48). Funktionen nutzen `preserve_none`, damit Einsprünge keine Register sichern.
+
 ## Offen
 - Gast-Register an Blockgrenzen (13,5 %), Float-Umwandlungen (10 %).

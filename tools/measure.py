@@ -120,7 +120,8 @@ def main():
     r.adb('pull', '-q', f'{r.FILES}/frametimes.csv', os.path.join(out, 'frametimes.csv'))
     if args.jitmap:
         r.adb('pull', '-q', f'{r.FILES}/jitmap.txt', os.path.join(out, 'jitmap.txt'))
-        r.adb('pull', '-q', f'{r.FILES}/dump/recompiler', os.path.join(out, 'recompiler'))
+        # only there when jitdump.enable exists
+        r.adb('pull', '-q', f'{r.FILES}/dump/recompiler', os.path.join(out, 'recompiler'), check=False)
 
     rows = frametimes.load(os.path.join(out, 'frametimes.csv'))
     window = args.idle if args.idle else SCENE_WINDOW_S[args.scene]
