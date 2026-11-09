@@ -15,6 +15,10 @@
 #include "HW/Espresso/Interpreter/PPCInterpreterHelper.h"
 #include "HW/Espresso/PPCState.h"
 
+#if BOOST_OS_LINUX
+#include <sys/mman.h>
+#endif
+
 using namespace Xbyak_aarch64;
 
 // remainingCycles of the current PPCInterpreter_t is kept in this register while recompiled code runs
@@ -63,6 +67,56 @@ static const GPReg LR{TEMP_GPR_2_ID};
 static const FPReg TEMP_FPR{TEMP_FPR_ID};
 
 static const util::Cpu s_cpu;
+
+// Recompiled functions are copied into large blocks of executable memory. Allocated one by one, every function
+// started on a page of its own, so calls between functions kept missing the instruction TLB and cache.
+class RecompiledCodeArena
+{
+	static constexpr size_t BLOCK_SIZE = 4 * 1024 * 1024;
+	static constexpr size_t FUNCTION_ALIGNMENT = 64; // cache line
+
+  public:
+	// returns nullptr if no memory that is both writable and executable can be mapped
+	void* Store(const void* code, size_t size)
+	{
+#if BOOST_OS_LINUX
+		std::unique_lock lock(m_mutex);
+		if (m_unavailable)
+			return nullptr;
+		const size_t alignedSize = (size + FUNCTION_ALIGNMENT - 1) & ~(FUNCTION_ALIGNMENT - 1);
+		if (!m_block || m_blockUsed + alignedSize > m_blockSize)
+		{
+			const size_t blockSize = std::max(BLOCK_SIZE, alignedSize);
+			void* block = mmap(nullptr, blockSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (block == MAP_FAILED)
+			{
+				cemuLog_log(LogType::Force, "Recompiler: Can't map executable memory for packed code, falling back to separate allocations");
+				m_unavailable = true;
+				return nullptr;
+			}
+			m_block = static_cast<uint8*>(block);
+			m_blockUsed = 0;
+			m_blockSize = blockSize;
+		}
+		uint8* dst = m_block + m_blockUsed;
+		m_blockUsed += alignedSize;
+		memcpy(dst, code, size);
+		__builtin___clear_cache(reinterpret_cast<char*>(dst), reinterpret_cast<char*>(dst + size));
+		return dst;
+#else
+		return nullptr;
+#endif
+	}
+
+  private:
+	std::mutex m_mutex;
+	uint8* m_block = nullptr;
+	size_t m_blockUsed = 0;
+	size_t m_blockSize = 0;
+	bool m_unavailable = false;
+};
+
+static RecompiledCodeArena s_recompiledCodeArena;
 
 class AArch64Allocator : public Allocator
 {
@@ -988,7 +1042,14 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, branchDstReg, ShMod::LSL, 1);
 		ldr(TEMP_GPR1.XReg, AdrExt(PPC_REC_INSTANCE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
 		mov(LR.WReg, branchDstReg);
-		br(TEMP_GPR1.XReg);
+		// guest calls and returns use blr and ret so the return address prediction of the CPU works
+		const auto kind = (IMLBranchToRegKind)imlInstruction->op_macro.param;
+		if (kind == IMLBranchToRegKind::Return)
+			ret(TEMP_GPR1.XReg);
+		else if (kind == IMLBranchToRegKind::Call)
+			blr(TEMP_GPR1.XReg);
+		else
+			br(TEMP_GPR1.XReg);
 		return true;
 	}
 	else if (imlInstruction->operation == IMLOperation::MACRO_BL)
@@ -1003,7 +1064,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		mov(TEMP_GPR1.XReg, lookupOffset);
 		ldr(TEMP_GPR1.XReg, AdrReg(PPC_REC_INSTANCE_REG, TEMP_GPR1.XReg));
 		mov(LR.WReg, newIP);
-		br(TEMP_GPR1.XReg);
+		blr(TEMP_GPR1.XReg);
 		return true;
 	}
 	else if (imlInstruction->operation == IMLOperation::MACRO_B_FAR)
@@ -1731,6 +1792,15 @@ static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFun
 	}
 	aarch64GenContext.setSize(codeSize);
 
+	// branches within the function are PC-relative, so the code can be moved
+	aarch64GenContext.ready(CodeArray::PROTECT_RW);
+	if (void* code = s_recompiledCodeArena.Store(aarch64GenContext.getCode(), codeSize))
+	{
+		PPCRecFunction->x86Code = code;
+		PPCRecFunction->x86Size = codeSize;
+		return true;
+	}
+
 	aarch64GenContext.readyRE();
 
 	// set code
@@ -1759,9 +1829,12 @@ void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
 	allocator.free(static_cast<uint32*>(code));
 }
 
+// guest calls are emitted as blr and overwrite x30, so the address leaveRecompilerCode returns to is kept on the stack
+constexpr size_t RECOMPILER_EXIT_ADDRESS_STACK_OFFSET = 160;
+
 void AArch64GenContext_t::enterRecompilerCode()
 {
-	constexpr size_t STACK_SIZE = 160 /* x19 .. x30 + v8.d[0] .. v15.d[0] */;
+	constexpr size_t STACK_SIZE = 160 /* x19 .. x30 + v8.d[0] .. v15.d[0] */ + 16 /* exit address */;
 	static_assert(STACK_SIZE % 16 == 0);
 	sub(sp, sp, STACK_SIZE);
 	mov(x9, sp);
@@ -1779,9 +1852,13 @@ void AArch64GenContext_t::enterRecompilerCode()
 	mov(PPC_REC_INSTANCE_REG, (uint64)ppcRecompilerInstanceData);
 	mov(MEM_BASE_REG, (uint64)memory_base);
 
+	Label exitLabel;
+	adr(x9, exitLabel);
+	str(x9, AdrUimm(sp, RECOMPILER_EXIT_ADDRESS_STACK_OFFSET));
 	// branch to recFunc
-	blr(x0); // call argument 1
+	br(x0); // call argument 1
 
+	L(exitLabel);
 	mov(x9, sp);
 	ldp(x19, x20, AdrPostImm(x9, 16));
 	ldp(x21, x22, AdrPostImm(x9, 16));
@@ -1801,6 +1878,7 @@ void AArch64GenContext_t::leaveRecompilerCode()
 {
 	str(LR.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, instructionPointer)));
 	str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
+	ldr(x30, AdrUimm(sp, RECOMPILER_EXIT_ADDRESS_STACK_OFFSET));
 	ret();
 }
 

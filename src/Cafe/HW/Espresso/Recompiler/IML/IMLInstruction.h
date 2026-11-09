@@ -165,7 +165,7 @@ enum class IMLOperation : uint8
 	OP_X86_CMP, // R_R and R_S32
 
 	// Macros share the operation field and use distinct values as well.
-	MACRO_B_TO_REG,		// branch to PPC address in register (used for BCCTR, BCLR)
+	MACRO_B_TO_REG,		// branch to PPC address in register (used for BCCTR, BCLR), op_macro.param is a IMLBranchToRegKind
 
 	MACRO_BL,			// call to different function (can be within same function)
 	MACRO_B_FAR,			// branch to different function
@@ -197,6 +197,14 @@ enum class IMLCondition : uint8
 	ORDERED_LT,
 	ORDERED_EQ,
 	ORDERED_U
+};
+
+// lets backends use the return address prediction of the host for MACRO_B_TO_REG
+enum class IMLBranchToRegKind : uint32
+{
+	Jump = 0,
+	Return = 1, // bclr
+	Call = 2, // bcctrl, bclrl
 };
 
 enum class IMLType : uint8
