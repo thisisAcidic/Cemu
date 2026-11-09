@@ -107,6 +107,8 @@ add_library(CemuCafe
   HW/Latte/Core/LatteCommandProcessor.cpp
   HW/Latte/Core/LatteConst.h
   HW/Latte/Core/LatteDraw.h
+  HW/Latte/Core/LatteFrameTimeLog.cpp
+  HW/Latte/Core/LatteFrameTimeLog.h
   HW/Latte/Core/LatteGSCopyShaderParser.cpp
   HW/Latte/Core/Latte.h
   HW/Latte/Core/LatteIndices.cpp

@@ -9,6 +9,7 @@
 #include "Cafe/HW/Latte/Core/LatteCachedFBO.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include "Cafe/HW/Latte/Core/LatteFrameTimeLog.h"
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "HW/Latte/Renderer/RendererCore.h"
@@ -707,13 +708,16 @@ void LatteRenderTarget_trackUpdates()
 
 void LatteRenderTarget_itHLESwapScanBuffer()
 {
-	performanceMonitor.cycle[performanceMonitor.cycleIndex].frameCounter++;
+	// some games (e.g. LEGO City Undercover) swap twice per copy to run at 30 FPS. Only swaps that show a new image count as a frame and get presented
+	const bool hasNewImage = sLatteRenderTargetState.backbufferUpdated[0];
+	if (hasNewImage)
+		performanceMonitor.cycle[performanceMonitor.cycleIndex].frameCounter++;
 	if(LatteGPUState.frameCounter > 5)
 		performanceMonitor.gpuTime_frameTime.endMeasuring();
 	LattePerformanceMonitor_frameEnd();
+	LatteFrameTimeLog_OnSwap(hasNewImage, PPCTimer_tscToMicroseconds(performanceMonitor.gpuTime_shaderCreate.getPreviousFrameValue()));
 	FrameBenchmarkHelper::FrameEnd();
 	LatteGPUState.frameCounter++;
-	// some games (e.g. LEGO City Undercover) swap twice per copy to run at 30 FPS. Presenting the second swap would show an empty image
 	g_renderer->SwapBuffers(sLatteRenderTargetState.backbufferUpdated[0], sLatteRenderTargetState.backbufferUpdated[1]);
 	sLatteRenderTargetState.backbufferUpdated[0] = false;
 	sLatteRenderTargetState.backbufferUpdated[1] = false;
