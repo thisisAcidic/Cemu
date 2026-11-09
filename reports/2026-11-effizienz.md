@@ -62,10 +62,11 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 
 | Treiber | Ø FPS | p99 | GPU-Thread-Last | Kern-1-Last | Leistung |
 |---|---|---|---|---|---|
+| Qualcomm System-Treiber V@0676.53 | 59,9 | 18,3 ms | 73 % | 82 % | 9,71 W |
 | Qualcomm 819.2 (tatsächlich der System-Treiber, siehe unten) | 59,5 | 23,3 ms | 72 % | 82 % | 9,43 W |
 | **Turnip 27.0.0-R2** | 59,3 | 21,4 ms | **51 %** | 82 % | 9,80 W |
 
-- Turnip 27.0.0-R2 ist deutlich besser als Turnip T30 (44–49 FPS) und senkt die CPU-Last des GPU-Threads um rund 20 Prozentpunkte.
+- Turnip 27.0.0-R2 ist deutlich besser als Turnip T30 (44–49 FPS) und senkt die CPU-Last des GPU-Threads um rund 20 Prozentpunkte. p99 ist etwas schlechter (21,4 gegen 18,3 ms), zwei Bilder über 50 ms.
 - **Fehler im Treiber-Laden:** Cemu kopierte nur die Hauptbibliothek eines Treiberpakets in den internen Speicher. Qualcomm-Pakete bringen eigene Versionen ihrer Abhängigkeiten mit (`notgsl.so`, `notadreno_utils.so`, `notllvm-glnext.so`), die dadurch fehlten. Das Log meldete trotzdem „Loaded custom driver“, im Einsatz war aber der System-Treiber V@0676.53 vom Dezember 2023. Fix auf `fix/custom-driver-package`, Nachmessung r7-qcom819/837 läuft.
 - Turnip Gen8 V39 ist für A8xx gebaut und wurde nicht getestet. Qualcomm 837.6 verlangt laut Metadaten Android 15 (API 35), der Thor hat Android 13.
 
