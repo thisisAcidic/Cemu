@@ -78,7 +78,7 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 - Turnip 27.0.0-R2 ist deutlich besser als Turnip T30 (44–49 FPS) und senkt die CPU-Last des GPU-Threads um rund 20 Prozentpunkte. p99 ist etwas schlechter (21,4 gegen 18,3 ms), zwei Bilder über 50 ms.
 - **Fehler im Treiber-Laden:** Cemu kopierte nur die Hauptbibliothek eines Treiberpakets in den internen Speicher. Qualcomm-Pakete bringen eigene Versionen ihrer Abhängigkeiten mit (`notgsl.so`, `notadreno_utils.so`, `notllvm-glnext.so`), die dadurch fehlten. Das Log meldete trotzdem „Loaded custom driver“, im Einsatz war aber der System-Treiber V@0676.53 vom Dezember 2023. Fix auf `fix/custom-driver-package`, Nachmessung r7-qcom819/837 läuft.
 - Turnip Gen8 V39 ist für A8xx gebaut und wurde nicht getestet. Qualcomm 837.6 verlangt laut Metadaten Android 15 (API 35), läuft auf dem Thor mit Android 13 aber trotzdem.
-- **Empfehlung: Qualcomm 819.2** (Treiberstand August 2025). 0,8 W weniger als der System-Treiber, bestes p99.
+- ~~Empfehlung: Qualcomm 819.2~~ **zurückgezogen**: 819.2 erzeugt auf dem Thor kaputte (fast weiße) Bilder, siehe „Flackern“. Der Leistungsvorteil kann zum Teil daher kommen, dass weniger gerendert wurde. Alle Leistungswerte aus Läufen mit 819.2 (r7-qcom819, r8-*, r9-*) sind deshalb nur unter Vorbehalt vergleichbar.
 
 ## DDR läuft immer mit Höchsttakt
 
@@ -124,7 +124,16 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 
 - Beobachtung des Nutzers: Welt, Schatten und FPS-Anzeige flackern leicht und unregelmäßig.
 - Ursache: Das GamePad-Bild wird in den zweiten Bildschirm kopiert, sobald das Spiel es kopiert, also mitten im Bild. Dabei wurde das Scissor-Rechteck auf die Fenstergröße gesetzt und nicht zurückgestellt. Cemu setzt es nur neu, wenn das Spiel seine Scissor-Register ändert. Bis dahin wurden die folgenden Draws abgeschnitten. Meine Kachel-Hash-Prüfung für unveränderte GamePad-Bilder hatte denselben Fehler mit einem viel kleineren Rechteck und verstärkte es stark.
-- Fix: Viewport und Scissor werden nach beiden Durchgängen wiederhergestellt, die Deskriptor-Sets beim nächsten Draw neu gebunden. Prüfung mit Bildschirmaufnahme einer ruhenden Szene (Werkzeug `flicker_test.sh`).
+- Fix: Viewport und Scissor werden nach beiden Durchgängen wiederhergestellt, die Deskriptor-Sets beim nächsten Draw neu gebunden.
+- Prüfung mit Bildschirmaufnahme einer ruhenden Szene (`flicker_test.sh`, 15 s, weiße Bilder gezählt):
+
+| Build | Treiber | weiße Bilder |
+|---|---|---|
+| dev (alter Fehler in der Fensterkopie) | Qualcomm 819.2 | 56 % |
+| GamePad-Branch mit Scissor-Fix | Qualcomm 819.2 | 14 % |
+| GamePad-Branch mit Scissor-Fix | System-Treiber | **0 %** (897 Bilder, mittlere Differenz 0,08) |
+
+- **Hauptursache ist der Quest-Treiber 819.2**, der Scissor-Fehler kam dazu. Fix ist in `dev`.
 
 ## Offen
 - Gast-Register an Blockgrenzen (13,5 %), Float-Umwandlungen (10 %).
