@@ -115,10 +115,17 @@ struct NegativeRegValueJumpInfo
 	WReg regValue;
 };
 
+struct ConditionalFlagsJumpInfo
+{
+	IMLSegment* target;
+	Cond cond;
+};
+
 using JumpInfo = std::variant<
 	UnconditionalJumpInfo,
 	ConditionalRegJumpInfo,
-	NegativeRegValueJumpInfo>;
+	NegativeRegValueJumpInfo,
+	ConditionalFlagsJumpInfo>;
 
 struct AArch64GenContext_t : CodeGenerator
 {
@@ -150,6 +157,7 @@ struct AArch64GenContext_t : CodeGenerator
 	void fpr_r(IMLInstruction* imlInstruction);
 	void fpr_compare(IMLInstruction* imlInstruction);
 	void cjump(IMLInstruction* imlInstruction, IMLSegment* imlSegment);
+	void flagsJump(IMLInstruction* imlInstruction, IMLSegment* imlSegment);
 	void jump(IMLSegment* imlSegment);
 	void conditionalJumpCycleCheck(IMLSegment* imlSegment);
 
@@ -236,6 +244,32 @@ struct AArch64GenContext_t : CodeGenerator
 			tbz(jump.regBool, 0, skipJump);
 		else
 			tbnz(jump.regBool, 0, skipJump);
+		addressOffset -= 4;
+
+		// in +/-128MB
+		if (-0x8000000 <= addressOffset && addressOffset <= 0x7ffffff)
+		{
+			b(addressOffset);
+			L(skipJump);
+			return true;
+		}
+
+		cemu_assert_suspicious();
+
+		return false;
+	}
+
+	bool handleJump(sint64 addressOffset, const ConditionalFlagsJumpInfo& jump)
+	{
+		// in +/-1MB
+		if (-0x100000 <= addressOffset && addressOffset <= 0xfffff)
+		{
+			b(jump.cond, addressOffset);
+			return true;
+		}
+
+		Label skipJump;
+		b(static_cast<Cond>(jump.cond ^ 1), skipJump); // inverted condition
 		addressOffset -= 4;
 
 		// in +/-128MB
@@ -575,6 +609,10 @@ bool AArch64GenContext_t::r_r(IMLInstruction* imlInstruction)
 	{
 		clz(regR, regA);
 	}
+	else if (imlInstruction->operation == IMLOperation::OP_X86_CMP)
+	{
+		cmp(regR, regA);
+	}
 	else
 	{
 		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r(): Unsupported operation {:x}", static_cast<uint32>(imlInstruction->operation));
@@ -595,6 +633,10 @@ bool AArch64GenContext_t::r_s32(IMLInstruction* imlInstruction)
 	else if (imlInstruction->operation == IMLOperation::OP_LEFT_ROTATE)
 	{
 		ror(reg, reg, 32 - (imm32 & 0x1f));
+	}
+	else if (imlInstruction->operation == IMLOperation::OP_X86_CMP)
+	{
+		cmp_imm(reg, imm32, TEMP_GPR1.WReg);
 	}
 	else
 	{
@@ -867,6 +909,18 @@ void AArch64GenContext_t::cjump(IMLInstruction* imlInstruction, IMLSegment* imlS
 		.target = imlSegment->nextSegmentBranchTaken,
 		.regBool = regBool,
 		.mustBeTrue = imlInstruction->op_conditional_jump.mustBeTrue,
+	});
+}
+
+// conditional jump on the flags set by an OP_X86_CMP right before it
+void AArch64GenContext_t::flagsJump(IMLInstruction* imlInstruction, IMLSegment* imlSegment)
+{
+	Cond cond = ImlCondToArm64Cond(imlInstruction->op_x86_eflags_jcc.cond);
+	if (imlInstruction->op_x86_eflags_jcc.invertedCondition)
+		cond = static_cast<Cond>(cond ^ 1);
+	prepareJump(ConditionalFlagsJumpInfo{
+		.target = imlSegment->nextSegmentBranchTaken,
+		.cond = cond,
 	});
 }
 
@@ -1542,6 +1596,10 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 			else if (imlInstruction->type == IMLType::CONDITIONAL_JUMP)
 			{
 				aarch64GenContext.cjump(imlInstruction, segIt);
+			}
+			else if (imlInstruction->type == IMLType::X86_EFLAGS_JCC)
+			{
+				aarch64GenContext.flagsJump(imlInstruction, segIt);
 			}
 			else if (imlInstruction->type == IMLType::JUMP)
 			{
