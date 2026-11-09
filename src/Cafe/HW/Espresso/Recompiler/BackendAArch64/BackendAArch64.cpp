@@ -988,7 +988,14 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, branchDstReg, ShMod::LSL, 1);
 		ldr(TEMP_GPR1.XReg, AdrExt(PPC_REC_INSTANCE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
 		mov(LR.WReg, branchDstReg);
-		br(TEMP_GPR1.XReg);
+		// guest calls and returns use blr and ret so the return address prediction of the CPU works
+		const auto kind = (IMLBranchToRegKind)imlInstruction->op_macro.param;
+		if (kind == IMLBranchToRegKind::Return)
+			ret(TEMP_GPR1.XReg);
+		else if (kind == IMLBranchToRegKind::Call)
+			blr(TEMP_GPR1.XReg);
+		else
+			br(TEMP_GPR1.XReg);
 		return true;
 	}
 	else if (imlInstruction->operation == IMLOperation::MACRO_BL)
@@ -1003,7 +1010,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		mov(TEMP_GPR1.XReg, lookupOffset);
 		ldr(TEMP_GPR1.XReg, AdrReg(PPC_REC_INSTANCE_REG, TEMP_GPR1.XReg));
 		mov(LR.WReg, newIP);
-		br(TEMP_GPR1.XReg);
+		blr(TEMP_GPR1.XReg);
 		return true;
 	}
 	else if (imlInstruction->operation == IMLOperation::MACRO_B_FAR)
@@ -1759,9 +1766,12 @@ void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
 	allocator.free(static_cast<uint32*>(code));
 }
 
+// guest calls are emitted as blr and overwrite x30, so the address leaveRecompilerCode returns to is kept on the stack
+constexpr size_t RECOMPILER_EXIT_ADDRESS_STACK_OFFSET = 160;
+
 void AArch64GenContext_t::enterRecompilerCode()
 {
-	constexpr size_t STACK_SIZE = 160 /* x19 .. x30 + v8.d[0] .. v15.d[0] */;
+	constexpr size_t STACK_SIZE = 160 /* x19 .. x30 + v8.d[0] .. v15.d[0] */ + 16 /* exit address */;
 	static_assert(STACK_SIZE % 16 == 0);
 	sub(sp, sp, STACK_SIZE);
 	mov(x9, sp);
@@ -1779,9 +1789,13 @@ void AArch64GenContext_t::enterRecompilerCode()
 	mov(PPC_REC_INSTANCE_REG, (uint64)ppcRecompilerInstanceData);
 	mov(MEM_BASE_REG, (uint64)memory_base);
 
+	Label exitLabel;
+	adr(x9, exitLabel);
+	str(x9, AdrUimm(sp, RECOMPILER_EXIT_ADDRESS_STACK_OFFSET));
 	// branch to recFunc
-	blr(x0); // call argument 1
+	br(x0); // call argument 1
 
+	L(exitLabel);
 	mov(x9, sp);
 	ldp(x19, x20, AdrPostImm(x9, 16));
 	ldp(x21, x22, AdrPostImm(x9, 16));
@@ -1801,6 +1815,7 @@ void AArch64GenContext_t::leaveRecompilerCode()
 {
 	str(LR.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, instructionPointer)));
 	str(CYCLES_REG, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles)));
+	ldr(x30, AdrUimm(sp, RECOMPILER_EXIT_ADDRESS_STACK_OFFSET));
 	ret();
 }
 
