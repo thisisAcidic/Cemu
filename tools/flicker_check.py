@@ -27,8 +27,12 @@ def diff(a, b):
     return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
 
 
-def main():
-    all_frames = list(frames(sys.argv[1]))
+def corner(frame):
+    # the FPS counter sits in the top left corner
+    return bytes(frame[y * W + x] for y in range(H // 10) for x in range(W // 6))
+
+
+def count_flicker(all_frames, label):
     diffs = [diff(all_frames[i], all_frames[i + 1]) for i in range(len(all_frames) - 1)]
     median = statistics.median(diffs) if diffs else 0
     threshold = max(3 * median, 1.5)
@@ -38,9 +42,16 @@ def main():
         across = diff(all_frames[i - 1], all_frames[i + 1])
         if before > threshold and after > threshold and across < min(before, after) / 2:
             flicker.append((i, before, after, across))
-    print(f'{len(all_frames)} frames, median difference {median:.2f}, flicker frames: {len(flicker)}')
-    for i, before, after, across in flicker[:20]:
+    print(f'{label}: median difference {median:.2f}, flicker frames: {len(flicker)}')
+    for i, before, after, across in flicker[:10]:
         print(f'  frame {i}: {before:.1f} to previous, {after:.1f} to next, {across:.1f} between them')
+
+
+def main():
+    all_frames = list(frames(sys.argv[1]))
+    print(f'{len(all_frames)} frames')
+    count_flicker(all_frames, 'whole image')
+    count_flicker([corner(f) for f in all_frames], 'top left corner')
 
 
 if __name__ == '__main__':
