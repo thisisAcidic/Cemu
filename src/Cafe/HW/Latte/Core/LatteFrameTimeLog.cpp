@@ -27,7 +27,7 @@ void LatteFrameTimeLog_OnSwap(bool newFrame, uint64 shaderCreateTimeUs)
 	uint64 now = HighResolutionTimer::ticksToMicroseconds(HighResolutionTimer::now().getTick());
 	uint64 frameTime = s_lastFrameTime ? (now - s_lastFrameTime) : 0;
 	s_lastFrameTime = now;
-	s_logFile->writeStringFmt("%u,%llu,%llu,%llu\n", s_frameIndex, (unsigned long long)now, (unsigned long long)frameTime, (unsigned long long)s_shaderCreateTimeUs);
+	s_logFile->writeString(fmt::format("{},{},{},{}\n", s_frameIndex, now, frameTime, s_shaderCreateTimeUs).c_str());
 	s_shaderCreateTimeUs = 0;
 	s_frameIndex++;
 	if ((s_frameIndex % 120) == 0)

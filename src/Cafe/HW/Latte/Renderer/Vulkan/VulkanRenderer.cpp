@@ -1010,10 +1010,47 @@ void VulkanRenderer::InitializeSurface(const Vector2i& size, bool mainWindow)
 	}
 	else
 	{
-		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
-		// todo: figure out a way to exclusively create swapchain on main LatteThread
+		// created on the GPU thread, which also recreates the main swapchain together with the imgui backend shared by both windows
+		std::unique_lock lock(m_padSwapchainMutex);
+		m_padSwapchainRequest = size;
+	}
+}
+
+// called by the GPU thread on every swap since the pad window is opened and closed by the UI thread
+void VulkanRenderer::UpdatePadSwapchain()
+{
+	std::unique_lock lock(m_padSwapchainMutex);
+	if (m_destroyPadSwapchainNextSwap.test())
+	{
+		DestroyPadSwapchain();
+		m_destroyPadSwapchainNextSwap.clear();
+		m_destroyPadSwapchainNextSwap.notify_all();
+	}
+	if (!m_padSwapchainRequest)
+		return;
+	const Vector2i size = *m_padSwapchainRequest;
+	m_padSwapchainRequest.reset();
+	// Android only allows one surface per window, so the old one has to go first
+	DestroyPadSwapchain();
+	try
+	{
+		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(false, size);
 		m_padSwapchainInfo->Create();
 	}
+	catch (const std::exception& ex)
+	{
+		m_padSwapchainInfo.reset();
+		cemuLog_log(LogType::Force, "Failed to create the GamePad swapchain: {}", ex.what());
+	}
+}
+
+void VulkanRenderer::DestroyPadSwapchain()
+{
+	if (!m_padSwapchainInfo)
+		return;
+	SubmitCommandBuffer();
+	WaitDeviceIdle();
+	m_padSwapchainInfo.reset();
 }
 
 const std::unique_ptr<SwapchainInfoVk>& VulkanRenderer::GetChainInfoPtr(bool mainWindow) const
@@ -1028,8 +1065,14 @@ SwapchainInfoVk& VulkanRenderer::GetChainInfo(bool mainWindow) const
 
 void VulkanRenderer::StopUsingPadAndWait()
 {
-	m_destroyPadSwapchainNextAcquire.test_and_set();
-	m_destroyPadSwapchainNextAcquire.wait(true);
+	{
+		std::unique_lock lock(m_padSwapchainMutex);
+		m_padSwapchainRequest.reset();
+		if (!m_padSwapchainInfo)
+			return;
+		m_destroyPadSwapchainNextSwap.test_and_set();
+	}
+	m_destroyPadSwapchainNextSwap.wait(true);
 }
 
 bool VulkanRenderer::IsPadWindowActive()
@@ -3071,14 +3114,6 @@ bool VulkanRenderer::AcquireNextSwapchainImage(bool mainWindow)
 	if(!IsSwapchainInfoValid(mainWindow))
 		return false;
 
-	if(!mainWindow && m_destroyPadSwapchainNextAcquire.test())
-	{
-		RecreateSwapchain(mainWindow, true);
-		m_destroyPadSwapchainNextAcquire.clear();
-		m_destroyPadSwapchainNextAcquire.notify_all();
-		return false;
-	}
-
 	auto& chainInfo = GetChainInfo(mainWindow);
 
 	if (chainInfo.swapchainImageIndex != -1)
@@ -3280,6 +3315,8 @@ void VulkanRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 
 	if (swapDRC && IsSwapchainInfoValid(false))
 		SwapBuffer(false);
+
+	UpdatePadSwapchain();
 
 	if(swapTV)
 		VulkanBenchmarkPrintResults();
