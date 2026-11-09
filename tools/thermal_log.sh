@@ -14,13 +14,23 @@ done
 printf 'time'
 for z in \$zones; do printf ',%s' \$(cat \$z/type); done
 for c in /sys/devices/system/cpu/cpu[0-9]*; do printf ',%s_khz' \${c##*/}; done
-echo ',gpu_hz,gpu_busy,batt_ua,batt_uv'
+echo ',gpu_hz,gpu_busy,batt_ua,batt_uv,core1_ticks,gpu_thread_ticks'
 while true; do
   printf '%s' \$(date +%s)
   for z in \$zones; do printf ',%s' \$(cat \$z/temp 2>/dev/null); done
   for c in /sys/devices/system/cpu/cpu[0-9]*; do printf ',%s' \$(cat \$c/cpufreq/scaling_cur_freq 2>/dev/null); done
   printf ',%s,%s' \$(cat /sys/class/kgsl/kgsl-3d0/gpuclk 2>/dev/null) \$(cat /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null | tr -d ' %')
-  printf ',%s,%s\n' \$(cat /sys/class/power_supply/battery/current_now 2>/dev/null) \$(cat /sys/class/power_supply/battery/voltage_now 2>/dev/null)
+  printf ',%s,%s' \$(cat /sys/class/power_supply/battery/current_now 2>/dev/null) \$(cat /sys/class/power_supply/battery/voltage_now 2>/dev/null)
+  # cpu time (utime + stime, clock ticks) of the emulated main core and the GPU thread
+  core1=''; gpu=''
+  p=\$(pidof info.cemu.cemu.profile)
+  for t in /proc/\$p/task/*; do
+    case \$(cat \$t/comm 2>/dev/null) in
+      'OSSched[core=1]') core1=\$(cut -d' ' -f14,15 \$t/stat | tr ' ' '+');;
+      LatteThread) gpu=\$(cut -d' ' -f14,15 \$t/stat | tr ' ' '+');;
+    esac
+  done
+  printf ',%s,%s\n' \$((\${core1:-0})) \$((\${gpu:-0}))
   sleep $INTERVAL
 done
 " > "$OUT"
