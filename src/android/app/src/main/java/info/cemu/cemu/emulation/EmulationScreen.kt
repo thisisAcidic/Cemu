@@ -40,7 +40,6 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,8 +61,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
@@ -452,12 +450,8 @@ private fun EmulationSurfaces(
         externalDisplayPadScreen = emulationSettings.externalDisplayPadScreen,
     )
 
-    // presentations stay on their display while the activity is in the background, so only show them while it is visible
-    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
-    val showPresentations = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
-
     val tv = placement.tv
-    if (showPresentations && tv is ScreenTarget.Display) {
+    if (tv is ScreenTarget.Display) {
         SurfacePresentation(
             displayId = tv.displayId,
             isTV = true,
@@ -466,7 +460,7 @@ private fun EmulationSurfaces(
         )
     }
     val pad = placement.pad
-    if (showPresentations && pad is ScreenTarget.Display) {
+    if (pad is ScreenTarget.Display) {
         SurfacePresentation(
             displayId = pad.displayId,
             isTV = false,
@@ -530,7 +524,8 @@ private fun SurfacePresentation(
     val context = LocalContext.current
     val currentOnSurfaceChanged by rememberUpdatedState(onSurfaceChanged)
 
-    DisposableEffect(displayId, isTV) {
+    // presentations stay on their display while the activity is in the background, so only show them while it is started
+    LifecycleStartEffect(displayId, isTV) {
         val display = context.getSystemService(DisplayManager::class.java).getDisplay(displayId)
         val presentation = display?.let {
             EmulationPresentation(context, it, isTV, holderCallback) { currentOnSurfaceChanged() }
@@ -540,7 +535,7 @@ private fun SurfacePresentation(
         } catch (_: WindowManager.InvalidDisplayException) {
             // the display went away before the presentation could be shown
         }
-        onDispose {
+        onStopOrDispose {
             presentation?.dismiss()
         }
     }
