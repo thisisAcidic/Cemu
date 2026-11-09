@@ -51,7 +51,8 @@ void SwapchainInfoVk::RecreateSurface()
 void SwapchainInfoVk::Create()
 {
 #if BOOST_PLAT_ANDROID
-	if (surfaceWasLost)
+	// a resize of the new window can trigger the recreation before a present reported the old surface as lost
+	if (surfaceWasLost || (mainWindow && WindowSystem::GetWindowInfo().canvas_main.surface != m_currentWindow))
 		RecreateSurface();
 #endif
 
