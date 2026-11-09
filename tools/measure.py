@@ -44,7 +44,7 @@ def configure(out, driver, patch, cpu):
     r.adb('shell', f'touch {r.FILES}/frametimes.enable; rm -f {r.FILES}/frametimes.csv')
 
 
-def thermal_summary(path):
+def thermal_summary(path, window_s):
     rows = list(csv.DictReader(line for line in open(path) if not line.startswith('#')))
     if not rows:
         return {}
@@ -55,7 +55,12 @@ def thermal_summary(path):
     prime = [int(row['cpu7_khz']) / 1000 for row in rows if row.get('cpu7_khz')]
     gpu_mhz = [int(row['gpu_hz']) / 1e6 for row in rows if row.get('gpu_hz')]
     busy = [int(row['gpu_busy']) for row in rows if row.get('gpu_busy')]
+    # battery power while the scene is measured: the log keeps running for a few seconds after the app was closed
+    end = int(rows[-1]['time']) - 5
+    scene = [row for row in rows if end - window_s <= int(row['time']) <= end and row.get('batt_ua') and row.get('batt_uv')]
+    power = [abs(int(row['batt_ua'])) * int(row['batt_uv']) / 1e12 for row in scene]
     return {
+        'power_scene_avg_w': sum(power) / len(power) if power else 0,
         'cpu_temp_max_c': max(maxc, default=0), 'cpu_temp_end_c': maxc[-1] if maxc else 0,
         'gpu_temp_max_c': max(maxg, default=0),
         'prime_core_mhz_min': min(prime, default=0), 'prime_core_mhz_avg': sum(prime) / len(prime) if prime else 0,
@@ -103,7 +108,7 @@ def main():
     window = args.idle if args.idle else SCENE_WINDOW_S[args.scene]
     last = rows[-1]['timestamp_us']
     scene_rows = [row for row in rows if row['timestamp_us'] >= last - window * 1e6]
-    summary = {'config': vars(args), 'frames': frametimes.summarize(scene_rows), 'thermal': thermal_summary(os.path.join(out, 'thermal.csv'))}
+    summary = {'config': vars(args), 'frames': frametimes.summarize(scene_rows), 'thermal': thermal_summary(os.path.join(out, 'thermal.csv'), window)}
     if perf is not None:
         summary['perf_stderr'] = perf.stderr[-500:]
     json.dump(summary, open(os.path.join(out, 'summary.json'), 'w'), indent=1)
