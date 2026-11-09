@@ -36,6 +36,39 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 - Mit Leerlauf-Schlaf taktet der schnellste Kern zwischen 1,84 und 3,19 GHz statt dauerhaft 3,19 GHz. p99 sinkt auf 19,5 ms.
 - Während pipe und all hing der Thor am Ladegerät. Der Akkustrom war dann der Ladestrom, die Leistungswerte sind unbrauchbar und gestrichen. Temperaturen sind durch das Laden ebenfalls etwas erhöht. Leistungsmessungen brauchen Akkubetrieb.
 
+## JIT-Profil (r5-all-jit, Kern 1)
+
+- 77 % der Zyklen von Kern 1 liegen im übersetzten Spielcode. Das Profil ist flach: Die 40 heißesten Gastfunktionen machen zusammen nur 19 % aus. Es gibt keine einzelne Schleife, die man gezielt verbessern könnte; der Hebel ist die allgemeine Qualität des erzeugten Codes.
+- Verteilung der Samples im JIT-Code:
+
+| Anteil | Ursache |
+|---|---|
+| **28 %** | **Zykluszähler `remainingCycles`**: pro Block `ldr` → `sub` → `str` über den Speicher, die Schleifenprüfung lädt ihn sofort wieder |
+| 13,5 % | Gast-Register aus dem/in den Kontext laden/speichern (Blockgrenzen) |
+| 10,4 % | `fmov`/`fcvt` (Float-Umwandlungen, GPR↔FPR-Transfers) |
+| 10,0 % | `rev` (Byte-Tausch, Big Endian) |
+| 6,7 % | `cmp`/`cset` (ein PPC-`cmpw` wurde zu 3× `cmp` + 3× `cset`) |
+| 5,1 % | indirekte Sprünge (`br`) |
+| 3,1 % | echte Gast-Speicherzugriffe |
+
+- Umgesetzt auf `perf/aarch64-codegen`:
+  1. Kürzere Speicher- und Logikbefehle (Offset 0 ohne `add`, `rev16`, Floats direkt ins FP-Register, Masken als Immediate)
+  2. Vergleich + Sprung über die Flags (`cmp` + `b.cond`, der vorhandene x64-Pass funktioniert auch für AArch64)
+  3. Ein Befehlsplatz pro Sprung statt zwei (kein `nop` mehr hinter fast jedem Sprung)
+  4. **Zykluszähler in `x24`** statt im Speicher, zurückgeschrieben nur vor HLE-Aufrufen und beim Verlassen; gleiche Vergleiche teilen sich ein `cmp`
+- Stufe 1 + 2 laufen fehlerfrei durch den Hafen-Ablauf (r5-cg2-power). Stufe 3 + 4 sind gebaut, Messung r7-cg4 läuft.
+
+## Treiber (Hafen, Build cg2, Akku)
+
+| Treiber | Ø FPS | p99 | GPU-Thread-Last | Kern-1-Last | Leistung |
+|---|---|---|---|---|---|
+| Qualcomm 819.2 (tatsächlich der System-Treiber, siehe unten) | 59,5 | 23,3 ms | 72 % | 82 % | 9,43 W |
+| **Turnip 27.0.0-R2** | 59,3 | 21,4 ms | **51 %** | 82 % | 9,80 W |
+
+- Turnip 27.0.0-R2 ist deutlich besser als Turnip T30 (44–49 FPS) und senkt die CPU-Last des GPU-Threads um rund 20 Prozentpunkte.
+- **Fehler im Treiber-Laden:** Cemu kopierte nur die Hauptbibliothek eines Treiberpakets in den internen Speicher. Qualcomm-Pakete bringen eigene Versionen ihrer Abhängigkeiten mit (`notgsl.so`, `notadreno_utils.so`, `notllvm-glnext.so`), die dadurch fehlten. Das Log meldete trotzdem „Loaded custom driver“, im Einsatz war aber der System-Treiber V@0676.53 vom Dezember 2023. Fix auf `fix/custom-driver-package`, Nachmessung r7-qcom819/837 läuft.
+- Turnip Gen8 V39 ist für A8xx gebaut und wurde nicht getestet. Qualcomm 837.6 verlangt laut Metadaten Android 15 (API 35), der Thor hat Android 13.
+
 ## Offen
-- Messläufe: Pipelining-Fix allein, alles zusammen.
-- JIT-Profil nach Gastfunktionen (`--perf 20 --jitmap`), danach gezielte Verbesserungen im AArch64-Backend.
+- GamePad-Bildrate: Messung mit 10 FPS auf dem zweiten Bildschirm (r7-pad10fps) zeigt, was eine adaptive Rate sparen kann.
+- Gast-Register an Blockgrenzen (13,5 %), Float-Umwandlungen (10 %).
