@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
@@ -450,8 +452,12 @@ private fun EmulationSurfaces(
         externalDisplayPadScreen = emulationSettings.externalDisplayPadScreen,
     )
 
+    // presentations stay on their display while the activity is in the background, so only show them while it is visible
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val showPresentations = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+
     val tv = placement.tv
-    if (tv is ScreenTarget.Display) {
+    if (showPresentations && tv is ScreenTarget.Display) {
         SurfacePresentation(
             displayId = tv.displayId,
             isTV = true,
@@ -460,7 +466,7 @@ private fun EmulationSurfaces(
         )
     }
     val pad = placement.pad
-    if (pad is ScreenTarget.Display) {
+    if (showPresentations && pad is ScreenTarget.Display) {
         SurfacePresentation(
             displayId = pad.displayId,
             isTV = false,
