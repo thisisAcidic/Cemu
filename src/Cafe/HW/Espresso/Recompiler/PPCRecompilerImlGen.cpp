@@ -711,6 +711,12 @@ bool PPCRecompilerImlGen_BCSPR(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 		ppcImlGenContext->emitInst().make_r_s32(IMLOperation::OP_ASSIGN, registerLR, ppcImlGenContext->ppcAddressOfCurrentInstruction + 4);
 	}
 
+	IMLBranchToRegKind branchKind = IMLBranchToRegKind::Jump;
+	if (LK)
+		branchKind = IMLBranchToRegKind::Call;
+	else if (sprReg == SPR_LR)
+		branchKind = IMLBranchToRegKind::Return;
+
 	if (!BO.decrementerIgnore())
 	{
 		cemu_assert_unimplemented();
@@ -724,14 +730,14 @@ bool PPCRecompilerImlGen_BCSPR(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 		PPCBasicBlockInfo* currentBasicBlock = ppcImlGenContext->currentBasicBlock;
 		IMLSegment* bctrSeg = PPCIMLGen_CreateNewSegmentAsBranchTarget(*ppcImlGenContext, *currentBasicBlock);
 		ppcImlGenContext->emitInst().make_conditional_jump(regCRBit, !BO.conditionInverted());
-		bctrSeg->AppendInstruction()->make_macro(IMLOperation::MACRO_B_TO_REG, 0, 0, 0, branchDestReg);
+		bctrSeg->AppendInstruction()->make_macro(IMLOperation::MACRO_B_TO_REG, (uint32)branchKind, 0, 0, branchDestReg);
 	}
 	else
 	{
 		// branch always, no condition and no decrementer check
 		cemu_assert_debug(!ppcImlGenContext->currentBasicBlock->hasContinuedFlow);
 		cemu_assert_debug(!ppcImlGenContext->currentBasicBlock->hasBranchTarget);
-		ppcImlGenContext->emitInst().make_macro(IMLOperation::MACRO_B_TO_REG, 0, 0, 0, branchDestReg);
+		ppcImlGenContext->emitInst().make_macro(IMLOperation::MACRO_B_TO_REG, (uint32)branchKind, 0, 0, branchDestReg);
 	}
 	return true;
 }
