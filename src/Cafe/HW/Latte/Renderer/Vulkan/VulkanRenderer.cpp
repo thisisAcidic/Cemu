@@ -3477,8 +3477,10 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 
 	vkCmdEndRenderPass(m_state.currentCommandBuffer);
 
-	// restore viewport
+	// the GamePad image is copied while the game may still render, restore the state its draws rely on
 	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
+	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &m_state.currentScissorRect);
+	m_state.descriptorSetsChanged = true;
 
 	// mark current swapchain image as well defined
 	chainInfo.hasDefinedSwapchainImage = true;
