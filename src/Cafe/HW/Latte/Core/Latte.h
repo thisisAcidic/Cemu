@@ -192,3 +192,4 @@ void LatteThread_Exit();
 uint32 LatteThread_GetWakeUpCounter();
 void LatteThread_Sleep(uint32 wakeUpCounter, std::chrono::microseconds timeout); // returns early if woken up after the counter was read
 void LatteThread_WakeUp();
+void LatteThread_ApplyExperimentalUtilClamp(const char* threadKey);

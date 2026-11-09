@@ -115,6 +115,7 @@ void LatteThread_HandleOSScreen()
 int Latte_ThreadEntry()
 {
 	SetThreadName("LatteThread");
+	LatteThread_ApplyExperimentalUtilClamp("gpu");
 	sint32 w,h;
 	WindowSystem::GetWindowPhysSize(w,h);
 
@@ -239,6 +240,47 @@ void Latte_Stop()
 	sLatteThreadRunning = false;
 	_lock.unlock();
 	sLatteThread.join();
+}
+
+#if BOOST_OS_LINUX
+#include <sys/syscall.h>
+#endif
+
+// experiment: uclamp.txt in the user data folder with lines like "core1 700" limits how high the scheduler
+// may clock the cpu for that thread (0-1024)
+void LatteThread_ApplyExperimentalUtilClamp(const char* threadKey)
+{
+#if BOOST_OS_LINUX
+	std::unique_ptr<FileStream> fs(FileStream::openFile2(ActiveSettings::GetUserDataPath("uclamp.txt")));
+	if (!fs)
+		return;
+	std::string line;
+	while (fs->readLine(line))
+	{
+		char key[32]{};
+		uint32 value = 0;
+		if (sscanf(line.c_str(), "%31s %u", key, &value) != 2 || strcmp(key, threadKey) != 0)
+			continue;
+		struct
+		{
+			uint32 size;
+			uint32 sched_policy;
+			uint64 sched_flags;
+			sint32 sched_nice;
+			uint32 sched_priority;
+			uint64 sched_runtime;
+			uint64 sched_deadline;
+			uint64 sched_period;
+			uint32 sched_util_min;
+			uint32 sched_util_max;
+		} attr{};
+		attr.size = sizeof(attr);
+		attr.sched_flags = 0x08 | 0x10 | 0x40; // keep policy, keep params, util clamp max
+		attr.sched_util_max = value;
+		int r = syscall(SYS_sched_setattr, 0, &attr, 0);
+		cemuLog_log(LogType::Force, "uclamp {} max {}: {}", threadKey, value, r == 0 ? "ok" : strerror(errno));
+	}
+#endif
 }
 
 bool Latte_GetStopSignal()

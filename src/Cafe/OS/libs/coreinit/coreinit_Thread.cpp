@@ -10,6 +10,7 @@
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "config/ActiveSettings.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 
 #include "util/helpers/Semaphore.h"
 #include "util/helpers/ConcurrentQueue.h"
@@ -1465,6 +1466,7 @@ namespace coreinit
 	{
 		SetThreadName(fmt::format("OSSched[core={}]", (uintptr_t)_assignedCoreIndex).c_str());
 		t_assignedCoreIndex = (sint32)(uintptr_t)_assignedCoreIndex;
+		LatteThread_ApplyExperimentalUtilClamp(fmt::format("core{}", t_assignedCoreIndex).c_str());
 
 		ConfigureHostFloatingPointEnvironment();
 
