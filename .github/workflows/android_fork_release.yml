@@ -1,0 +1,74 @@
+name: Android fork release
+
+on:
+  push:
+    tags:
+      - "android-v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: "recursive"
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update -qq
+          sudo apt install -y gettext mono-complete
+
+      - name: Uncompile message catalogs
+        run: |
+          for mo_file in bin/resources/*/cemu.mo
+          do
+            language_code=$(basename $(dirname $mo_file))
+            po_file=src/android/app/src/main/assets/translations/$language_code/cemu.po
+            mkdir -p $(dirname $po_file)
+            msgunfmt $mo_file -o $po_file || echo "Failed to uncompile message catalog from $mo_file"
+          done
+
+      - name: Setup vcpkg binary cache
+        uses: ./.github/actions/set-up-vcpkg-binary-cache-action
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Determine version
+        run: |
+          version=${GITHUB_REF_NAME#android-v}
+          echo "EMULATOR_VERSION_MAJOR=${version%%.*}" >> $GITHUB_ENV
+          echo "EMULATOR_VERSION_MINOR=${version#*.}" >> $GITHUB_ENV
+
+      - name: Build Cemu
+        env:
+          ANDROID_STORE_FILE_BASE64: ${{ secrets.ANDROID_STORE_FILE_BASE64 }}
+          ANDROID_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          export JAVA_HOME=$JAVA_HOME_21_X64
+
+          cd ./src/android
+
+          if [[ -z "$ANDROID_STORE_FILE_BASE64" ]]; then
+            echo "Release signing secrets are missing"
+            exit 1
+          fi
+          base64 --decode <<< "${ANDROID_STORE_FILE_BASE64}" > store.jks
+          export ANDROID_STORE_FILE=$(pwd)/store.jks
+
+          ./gradlew assembleFork
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          apk=cemu-fork-${EMULATOR_VERSION_MAJOR}.${EMULATOR_VERSION_MINOR}.apk
+          cp src/android/app/build/outputs/apk/fork/*.apk $apk
+          gh release create "$GITHUB_REF_NAME" $apk --title "$GITHUB_REF_NAME" --generate-notes
