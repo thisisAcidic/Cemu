@@ -77,12 +77,14 @@ def main():
     ap.add_argument('--cpu', choices=['multi', 'single'], default='multi')
     ap.add_argument('--idle', type=int, help='harbor: stand still this long instead of sweeping')
     ap.add_argument('--perf', type=int, metavar='SECONDS', help='harbor: simpleperf record for this long during the sweep')
+    ap.add_argument('--jitmap', action='store_true', help='let Cemu write jitmap.txt, use together with --perf')
     ap.add_argument('--cooldown', type=float, default=50)
     args = ap.parse_args()
     out = os.path.join(ROOT, args.name)
     os.makedirs(out, exist_ok=True)
 
     configure(out, args.driver, args.patch, args.cpu)
+    r.adb('shell', f"{'touch' if args.jitmap else 'rm -f'} {r.FILES}/jitmap.enable; rm -rf {r.FILES}/jitmap.txt {r.FILES}/dump/recompiler")
     thermal = subprocess.Popen([os.path.join(TOOLS, 'thermal_log.sh'), os.path.join(out, 'thermal.csv'), '5'], start_new_session=True)
     cmd = [sys.executable, os.path.join(TOOLS, 'lcu_repro.py'), '-', out, '--cooldown', str(args.cooldown)]
     if args.scene == 'intro':
@@ -103,6 +105,9 @@ def main():
     repro.wait()
     os.killpg(thermal.pid, signal.SIGTERM)
     r.adb('pull', '-q', f'{r.FILES}/frametimes.csv', os.path.join(out, 'frametimes.csv'))
+    if args.jitmap:
+        r.adb('pull', '-q', f'{r.FILES}/jitmap.txt', os.path.join(out, 'jitmap.txt'))
+        r.adb('pull', '-q', f'{r.FILES}/dump/recompiler', os.path.join(out, 'recompiler'))
 
     rows = frametimes.load(os.path.join(out, 'frametimes.csv'))
     window = args.idle if args.idle else SCENE_WINDOW_S[args.scene]
