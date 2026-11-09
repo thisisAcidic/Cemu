@@ -24,6 +24,7 @@ Weitere Szenen (Stadtfahrt, belebte Plätze) erreicht der Spielstand noch nicht.
 | Hafen | Qualcomm | Multi | **56,7** | 31,5 ms | **48,6 %** | 0 | 525 MHz | 52 % | 84 °C |
 | Hafen (Wdh.) | Qualcomm | Multi | **57,3** | 30,6 ms | **48,8 %** | 1 | 507 MHz | 52 % | 82 °C |
 | Hafen | Qualcomm | Single | 53,9 | 27,0 ms | 22,0 % | 0 | 497 MHz | 53 % | 80 °C |
+| Hafen, **Stock-Takt** | Qualcomm | Multi | **59,9** | **18,9 ms** | 53,1 % | 0 | 522 MHz | 58 % | **93 °C** |
 | Intro | Turnip T30 | Multi | 59,9 | 18,1 ms | 57,7 % | 0 | 401 MHz | 27 % | 82 °C |
 | Intro | Qualcomm | Multi | 59,9 | 18,3 ms | 58,6 % | 0 | 418 MHz | 32 % | 79 °C |
 
@@ -34,6 +35,7 @@ Ohne 60-FPS-Patch läuft der Hafen stabil mit den nativen 30 FPS (Logger: Ø 30,
 2. **Multi-Core-Recompiler schlägt Single-Core** (57 gegen 54 FPS).
 3. **Zwischensequenzen laufen mit vollen 60 FPS.** Das Gameplay am Hafen verfehlt sie knapp: Ø 57 FPS, aber nur die Hälfte der Bilder liegt unter 16,7 ms.
 4. **Begrenzt wird von der CPU, nicht von der GPU.** Die GPU ist zu etwa 50 % ausgelastet.
+5. **Mit Stock-Takt hält der Hafen die 60 FPS** (Ø 59,9, p99 18,9 ms statt 31 ms). Der schnellste Kern läuft dabei im Mittel mit 3,15 GHz. Der Preis: CPU bis 93 °C statt 84 °C. Ziel der Effizienzarbeit ist, dieselben 60 FPS mit dem Takt des Small Underclock (2,48 GHz) zu schaffen, also rund 25 % weniger Arbeit pro Bild auf dem Flaschenhals-Thread.
 
 ## CPU-Profil (Hafen, Qualcomm, 20 s, simpleperf)
 - Threads: emulierter Wii-U-Kern 1 (`OSSched[core=1]`) 44 %, GPU-Thread (`LatteThread`) 36 %, Kern 2 18 % aller Takte.
@@ -58,4 +60,4 @@ Ohne 60-FPS-Patch läuft der Hafen stabil mit den nativen 30 FPS (Logger: Ø 30,
 ## Offen
 - Audio-Lag (Ton am Gerät aus, nicht untersucht).
 - Szenen mit mehr Last (Fahren, Stadt).
-- Effekt des Underclocks auf den Qualcomm-Treiber (nur Turnip mit Large UC gemessen), Stock-Takt noch nicht gemessen.
+- Effekt des Large Underclock auf den Qualcomm-Treiber (nur Turnip gemessen).
