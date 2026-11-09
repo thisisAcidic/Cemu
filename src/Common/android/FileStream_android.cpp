@@ -101,10 +101,12 @@ class FileStreamAdapter : public IFileStream
 	}
 	void writeStringFmt(const char* format, ...) override
 	{
+		char buffer[2048];
 		va_list arg_list;
 		va_start(arg_list, format);
-		m_impl->writeStringFmt(format, arg_list);
+		vsnprintf(buffer, sizeof(buffer), format, arg_list);
 		va_end(arg_list);
+		m_impl->writeString(buffer);
 	}
 	void writeString(const char* str) override
 	{
