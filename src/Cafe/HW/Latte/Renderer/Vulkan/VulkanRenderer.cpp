@@ -3672,7 +3672,10 @@ void VulkanRenderer::TrackPadImageChanges(LatteTextureView* texView)
 	memoryBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
 	vkCmdPipelineBarrier(m_state.currentCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
 
+	// the game may still render after copying its GamePad image, restore the state its draws rely on
 	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
+	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &m_state.currentScissorRect);
+	m_state.descriptorSetsChanged = true;
 
 	tracking.slotCommandBufferId[slot] = GetCurrentCommandBufferId();
 	tracking.slotSize[slot] = tilesX * tilesY * 4;
