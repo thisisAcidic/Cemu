@@ -29,12 +29,12 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 | Lauf | Ø FPS | p99 | ≤ 16,7 ms | Leistung | CPU max | GPU max |
 |---|---|---|---|---|---|---|
 | r5 Basis (`dev`) | 55,0 | 23,8 ms | 18,4 % | 9,56 W | 95 °C | 71 °C |
-| r5 pipe (Pipelining-Fix) | **59,4** | 23,6 ms | **51,1 %** | 11,90 W | 95 °C | 78 °C |
-| r5 all (Pipelining + Leerlauf-Schlaf) | **59,7** | **19,5 ms** | 51,0 % | 12,93 W | 95 °C | 77 °C |
+| r5 pipe (Pipelining-Fix) | **59,4** | 23,6 ms | **51,1 %** | lud | 95 °C | 78 °C |
+| r5 all (Pipelining + Leerlauf-Schlaf) | **59,7** | **19,5 ms** | 51,0 % | lud | 95 °C | 77 °C |
 
-- Der Pipelining-Fix bringt mit Dual Screen 4,4 FPS. Die Leistung steigt, weil die GPU nicht mehr wartet und mehr Bilder rendert.
+- Der Pipelining-Fix bringt mit Dual Screen 4,4 FPS.
 - Mit Leerlauf-Schlaf taktet der schnellste Kern zwischen 1,84 und 3,19 GHz statt dauerhaft 3,19 GHz. p99 sinkt auf 19,5 ms.
-- Die Leistung ist trotzdem rund 1 W höher (σ je Messpunkt etwa 0,9 W, n = 11, also eher echt). Vermutung: Der GPU-Thread schläft und erwacht mehrmals pro Bild, jedes Wecken kostet einen Futex-Syscall auf dem PPC-Thread. Prüfung mit dem Profil aus r5-all-jit.
+- Während pipe und all hing der Thor am Ladegerät. Der Akkustrom war dann der Ladestrom, die Leistungswerte sind unbrauchbar und gestrichen. Temperaturen sind durch das Laden ebenfalls etwas erhöht. Leistungsmessungen brauchen Akkubetrieb.
 
 ## Offen
 - Messläufe: Pipelining-Fix allein, alles zusammen.

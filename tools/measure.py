@@ -63,9 +63,12 @@ def thermal_summary(path, window_s):
     # battery power while the scene is measured: the log keeps running for a few seconds after the app was closed
     end = int(rows[-1]['time']) - 5
     scene = [row for row in rows if end - window_s <= int(row['time']) <= end and row.get('batt_ua') and row.get('batt_uv')]
-    power = [abs(int(row['batt_ua'])) * int(row['batt_uv']) / 1e12 for row in scene]
+    # while charging the battery current is the charge current, not what the device uses
+    charging = any(int(row['batt_ua']) > 0 for row in scene)
+    power = [-int(row['batt_ua']) * int(row['batt_uv']) / 1e12 for row in scene]
     return {
-        'power_scene_avg_w': sum(power) / len(power) if power else 0,
+        'power_scene_avg_w': None if charging or not power else sum(power) / len(power),
+        'charging': charging,
         'cpu_temp_max_c': max(maxc, default=0), 'cpu_temp_end_c': maxc[-1] if maxc else 0,
         'gpu_temp_max_c': max(maxg, default=0),
         'prime_core_mhz_min': min(prime, default=0), 'prime_core_mhz_avg': sum(prime) / len(prime) if prime else 0,
