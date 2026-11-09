@@ -56,7 +56,14 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
   2. Vergleich + Sprung über die Flags (`cmp` + `b.cond`, der vorhandene x64-Pass funktioniert auch für AArch64)
   3. Ein Befehlsplatz pro Sprung statt zwei (kein `nop` mehr hinter fast jedem Sprung)
   4. **Zykluszähler in `x24`** statt im Speicher, zurückgeschrieben nur vor HLE-Aufrufen und beim Verlassen; gleiche Vergleiche teilen sich ein `cmp`
-- Stufe 1 + 2 laufen fehlerfrei durch den Hafen-Ablauf (r5-cg2-power). Stufe 3 + 4 sind gebaut, Messung r7-cg4 läuft.
+- Alle vier Stufen laufen fehlerfrei durch den Hafen-Ablauf. Messung gegen dieselbe Referenz (System-Treiber, Akku):
+
+| Lauf | Ø FPS | p99 | Leistung | CPU max | Ø Takt schnellster Kern |
+|---|---|---|---|---|---|
+| r6-stock (Stufe 1 + 2) | 59,9 | 18,3 ms | 9,71 W | 94,3 °C | 2638 MHz |
+| **r7-cg4 (Stufe 1–4)** | 59,8 | 18,8 ms | **9,00 W** | **82,4 °C** | **2297 MHz** |
+
+  Die Last von Kern 1 bleibt bei rund 83 %, weil der Governor den Takt für die geringere Arbeit senkt. Das ist der Effizienzgewinn: 0,7 W weniger und 12 °C kühler.
 
 ## Treiber (Hafen, Build cg2, Akku)
 
@@ -65,10 +72,19 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 | Qualcomm System-Treiber V@0676.53 | 59,9 | 18,3 ms | 73 % | 82 % | 9,71 W |
 | Qualcomm 819.2 (tatsächlich der System-Treiber, siehe unten) | 59,5 | 23,3 ms | 72 % | 82 % | 9,43 W |
 | **Turnip 27.0.0-R2** | 59,3 | 21,4 ms | **51 %** | 82 % | 9,80 W |
+| **Qualcomm 819.2 (mit Lade-Fix)** | 59,9 | 18,1 ms | 65 % | 84 % | **8,88 W** |
+| Qualcomm 837.6 (mit Lade-Fix) | 59,9 | 18,1 ms | 67 % | 84 % | 9,11 W |
 
 - Turnip 27.0.0-R2 ist deutlich besser als Turnip T30 (44–49 FPS) und senkt die CPU-Last des GPU-Threads um rund 20 Prozentpunkte. p99 ist etwas schlechter (21,4 gegen 18,3 ms), zwei Bilder über 50 ms.
 - **Fehler im Treiber-Laden:** Cemu kopierte nur die Hauptbibliothek eines Treiberpakets in den internen Speicher. Qualcomm-Pakete bringen eigene Versionen ihrer Abhängigkeiten mit (`notgsl.so`, `notadreno_utils.so`, `notllvm-glnext.so`), die dadurch fehlten. Das Log meldete trotzdem „Loaded custom driver“, im Einsatz war aber der System-Treiber V@0676.53 vom Dezember 2023. Fix auf `fix/custom-driver-package`, Nachmessung r7-qcom819/837 läuft.
-- Turnip Gen8 V39 ist für A8xx gebaut und wurde nicht getestet. Qualcomm 837.6 verlangt laut Metadaten Android 15 (API 35), der Thor hat Android 13.
+- Turnip Gen8 V39 ist für A8xx gebaut und wurde nicht getestet. Qualcomm 837.6 verlangt laut Metadaten Android 15 (API 35), läuft auf dem Thor mit Android 13 aber trotzdem.
+- **Empfehlung: Qualcomm 819.2** (Treiberstand August 2025). 0,8 W weniger als der System-Treiber, bestes p99.
+
+## DDR läuft immer mit Höchsttakt
+
+- Der Speichertakt steht während der ganzen Messung auf 4224 MHz, dem Maximum von LPDDR5X. Der Bandbreitenmonitor fordert nur 2657 MHz an.
+- Ursache: Der Memlat-Voter der mittleren Kerne (`memlat:ddr:gold`) hat `min_freq = max_freq = 4224000`. Das gilt auch, wenn Cocoon im Vordergrund ist und Cemu nicht läuft, ist also eine Systemeinstellung (vermutlich Leistungsprofil), kein Spiele-Boost.
+- Das kostet dauerhaft Leistung, auch im Leerlauf. Ändern kann es nur der Nutzer über das Leistungsprofil (Root nötig für sysfs, wird hier nicht angefasst).
 
 ## Offen
 - GamePad-Bildrate: Messung mit 10 FPS auf dem zweiten Bildschirm (r7-pad10fps) zeigt, was eine adaptive Rate sparen kann.
