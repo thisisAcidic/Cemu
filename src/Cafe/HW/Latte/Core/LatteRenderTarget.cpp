@@ -725,6 +725,8 @@ void LatteRenderTarget_itHLESwapScanBuffer()
 	catchOpenGLError();
 	performanceMonitor.gpuTime_frameTime.beginMeasuring();
 
+	// texture garbage collection only looks at timespans of 100ms and more, so updating the tick once per frame is enough
+	LatteGPUState.currentDrawCallTick = GetTickCount();
 	LatteTC_CleanupUnusedTextures();
 	LatteSHRC_CleanupShaderStateCache();
 #ifdef ENABLE_OPENGL

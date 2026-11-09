@@ -30,7 +30,7 @@ struct LatteGPUState_t
 	// stats
 	uint32 frameCounter;
 	uint32 flipCounter; // increased by one everytime a vsync + flip happens
-	uint32 currentDrawCallTick; // set to current time at the beginning of a drawcall
+	uint32 currentDrawCallTick; // set to current time at the end of every frame
 	uint32 drawCallCounter; // increased after every drawcall
 	uint32 textureBindCounter; // increased at the beginning of _updateTextures()
 	std::atomic<uint64> flipRequestCount;
