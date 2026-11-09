@@ -176,6 +176,31 @@ void PPCRecompiler_attemptEnter(PPCInterpreter_t* hCPU, uint32 enterAddress)
 }
 bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext);
 
+// creating jitmap.enable in the user data folder writes a perf map of all recompiled functions to jitmap.txt
+// and dumps their code, so profiles taken on devices without a debugger can be attributed to guest functions
+static void PPCRecompiler_AddToJitMap(PPCRecFunction_t* ppcRecFunc)
+{
+	static std::mutex s_mutex;
+	static bool s_initialized = false;
+	static FileStream* s_mapFile = nullptr;
+	std::unique_lock lock(s_mutex);
+	if (!s_initialized)
+	{
+		s_initialized = true;
+		std::error_code ec;
+		if (fs::exists(ActiveSettings::GetUserDataPath("jitmap.enable"), ec))
+		{
+			s_mapFile = FileStream::createFile2(ActiveSettings::GetUserDataPath("jitmap.txt"));
+			fs::create_directories(ActiveSettings::GetUserDataPath("dump/recompiler"), ec);
+			ActiveSettings::EnableDumpRecompilerFunctions(true);
+		}
+	}
+	if (!s_mapFile)
+		return;
+	s_mapFile->writeString(fmt::format("{:x} {:x} ppc_{:08x}\n", (uintptr_t)ppcRecFunc->x86Code, ppcRecFunc->x86Size, ppcRecFunc->ppcAddress).c_str());
+	s_mapFile->Flush();
+}
+
 PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PPCRange_t range, std::set<uint32>& entryAddresses, std::vector<std::pair<MPTR, uint32>>& entryPointsOut, PPCFunctionBoundaryTracker& boundaryTracker)
 {
 	if (range.startAddress >= PPC_REC_CODE_AREA_END)
@@ -249,6 +274,7 @@ PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PP
 		return nullptr;
 	}
 #endif
+	PPCRecompiler_AddToJitMap(ppcRecFunc);
 	if (ActiveSettings::DumpRecompilerFunctionsEnabled())
 	{
 		FileStream* fs = FileStream::createFile2(ActiveSettings::GetUserDataPath(fmt::format("dump/recompiler/ppc_{:08x}.bin", ppcRecFunc->ppcAddress)));
