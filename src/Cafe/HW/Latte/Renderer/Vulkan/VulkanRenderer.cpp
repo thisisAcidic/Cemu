@@ -3222,8 +3222,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
 	cemu_assert_debug(m_numSubmittedCmdBuffers > 0);
 
 	// wait for the previous frame to finish rendering
-	WaitCommandBufferFinished(m_commandBufferIDOfPrevFrame);
-	m_commandBufferIDOfPrevFrame = currentFrameCmdBufferID;
+	// this is tracked per swapchain, otherwise presenting the GamePad right after the TV would wait for the frame that was just submitted
+	WaitCommandBufferFinished(chainInfo.m_commandBufferIDOfPrevFrame);
+	chainInfo.m_commandBufferIDOfPrevFrame = currentFrameCmdBufferID;
 
 	chainInfo.WaitAvailableFence();
 
