@@ -1,4 +1,4 @@
-name: Android fork release
+name: Cidemu release
 
 on:
   push:
@@ -69,6 +69,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          apk=cemu-fork-${EMULATOR_VERSION_MAJOR}.${EMULATOR_VERSION_MINOR}.apk
+          apk=cidemu-${EMULATOR_VERSION_MAJOR}.${EMULATOR_VERSION_MINOR}.apk
           cp src/android/app/build/outputs/apk/fork/*.apk $apk
-          gh release create "$GITHUB_REF_NAME" $apk --title "$GITHUB_REF_NAME" --generate-notes
+          gh release create "$GITHUB_REF_NAME" $apk --title "Cidemu ${EMULATOR_VERSION_MAJOR}.${EMULATOR_VERSION_MINOR}" --generate-notes
