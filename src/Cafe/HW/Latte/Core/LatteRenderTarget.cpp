@@ -9,6 +9,7 @@
 #include "Cafe/HW/Latte/Core/LatteCachedFBO.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include "Cafe/HW/Latte/Core/LatteFrameTimeLog.h"
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "HW/Latte/Renderer/RendererCore.h"
@@ -714,6 +715,7 @@ void LatteRenderTarget_itHLESwapScanBuffer()
 	if(LatteGPUState.frameCounter > 5)
 		performanceMonitor.gpuTime_frameTime.endMeasuring();
 	LattePerformanceMonitor_frameEnd();
+	LatteFrameTimeLog_OnSwap(hasNewImage, PPCTimer_tscToMicroseconds(performanceMonitor.gpuTime_shaderCreate.getPreviousFrameValue()));
 	FrameBenchmarkHelper::FrameEnd();
 	LatteGPUState.frameCounter++;
 	g_renderer->SwapBuffers(sLatteRenderTargetState.backbufferUpdated[0], sLatteRenderTargetState.backbufferUpdated[1]);
