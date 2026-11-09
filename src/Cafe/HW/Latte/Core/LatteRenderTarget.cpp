@@ -1044,8 +1044,9 @@ static bool LatteRenderTarget_ShouldUpdatePadWindow()
 		return true;
 	const uint32 currentTick = GetTickCount();
 	const bool focused = s_padIsMainScreen || (currentTick - s_padLastTouchTick) < 2000;
-	// an image that didn't change for half a second and was presented since then doesn't need to be presented again
-	if (!focused && g_renderer->SupportsPadImageChangeTracking() && !s_padImageNotPresented && (currentTick - s_padImageChangeTick) > 500)
+	// an image that didn't change for half a second and was presented since then doesn't need to be presented again,
+	// except once a second for overlays like the FPS counter that are drawn on top
+	if (!focused && g_renderer->SupportsPadImageChangeTracking() && !s_padImageNotPresented && (currentTick - s_padImageChangeTick) > 500 && (currentTick - s_lastUpdateTick) < 1000)
 		return false;
 	uint32 minInterval = 0;
 	if (!focused && mode == LattePadUpdateMode::Automatic)
