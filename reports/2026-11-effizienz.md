@@ -86,6 +86,23 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 - Ursache: Der Memlat-Voter der mittleren Kerne (`memlat:ddr:gold`) hat `min_freq = max_freq = 4224000`. Das gilt auch, wenn Cocoon im Vordergrund ist und Cemu nicht läuft, ist also eine Systemeinstellung (vermutlich Leistungsprofil), kein Spiele-Boost.
 - Das kostet dauerhaft Leistung, auch im Leerlauf. Ändern kann es nur der Nutzer über das Leistungsprofil (Root nötig für sysfs, wird hier nicht angefasst).
 
+## GamePad-Bildrate
+
+- Test mit fest 10 FPS auf dem zweiten Bildschirm: 9,37 W statt 9,71 W (−0,34 W), CPU im Messfenster 0,2 °C kühler, TV unverändert 59,8 FPS. Gespart werden GPU-Arbeit für Kopie und Present sowie Arbeit im Display-Compositor; der GPU-Thread wird kaum leichter.
+- Umgesetzt auf `feature/gamepad-frame-rate`, Einstellung „GamePad-Bildrate“:
+  - **Immer voll**: wie bisher
+  - **Voll, pausiert bei unverändertem Bild**
+  - **Automatisch** (Standard): 30 FPS, pausiert bei unverändertem Bild
+  - **Niedrig**: 10 FPS, pausiert bei unverändertem Bild
+  - Volle Rate für zwei Sekunden nach jeder Berührung des GamePad-Bildschirms und solange das GamePad auf dem großen Bildschirm liegt.
+- Erkennung unveränderter Bilder: Ein kleiner Shader bildet pro Bild einen Hash über jede 8×8-Kachel des GamePad-Bildes (exakte Bitwerte), die CPU vergleicht ihn ein bis zwei Bilder später mit dem vorherigen. Nach 0,5 s ohne Änderung wird nicht mehr präsentiert, bis sich etwas ändert.
+- Auf dem Thor geprüft: Am Titelbild präsentiert die GamePad-Ebene laut SurfaceFlinger keine Bilder mehr (letztes Bild 8,6 s älter als das des TV), nach einer Änderung wieder.
+
+## Taktbegrenzung (uclamp)
+
+- Idee: Mit fester Bildzeit wäre der niedrigste Takt, der die 16,7 ms gerade schafft, effizienter als die Spitzen des Governors.
+- `sched_setattr` mit `SCHED_FLAG_UTIL_CLAMP_MAX` aus der App: „Operation not permitted“. Ohne Root nicht nutzbar. Offen bleibt die ADPF-Schnittstelle (Performance Hints).
+- Streuung zweier gleicher Builds (r8-dev-819 und r8-clamp-819, wirkungslos): 8,82 gegen 9,01 W, also rund 0,2 W.
+
 ## Offen
-- GamePad-Bildrate: Messung mit 10 FPS auf dem zweiten Bildschirm (r7-pad10fps) zeigt, was eine adaptive Rate sparen kann.
 - Gast-Register an Blockgrenzen (13,5 %), Float-Umwandlungen (10 %).
