@@ -31,3 +31,10 @@ Stand 2026-11-09, Test-App `info.cemu.cemu.profile` auf `dev` @ aca800b8 (vor de
 
 ## Testablauf
 `tools/lcu_repro.py` startet das Spiel, lädt Slot 1, überspringt das Intro mit + und X, wartet auf die Shader und bewegt die Kamera mit dem rechten Stick. Die Eingaben kommen über `sendevent` auf `/dev/input/event9` („Odin Controller“): + = `BTN_START` 315, X = `BTN_NORTH` 307, A = 304, rechter Stick `ABS_Z`/`ABS_RZ`. Für Flackern ist das Urteil des Nutzers am Gerät verlässlicher als einzelne Screenshots.
+
+## 60-FPS-Patch für v0
+Patch-Gruppe `[LCU60FPSEUv0]` (moduleMatches `0x01d048b1`) im Pack `Lego City Undercover/60FPS`, Fork `thisisAcidic/cemu_graphic_packs`, Zweig `lcu-60fps-v0`:
+- `0x025d65bc = nop`: Die Present-Funktion ruft `GX2SwapScanBuffers` zweimal hintereinander auf (`0x025d65b8`, `0x025d65bc`), das ist die 30-FPS-Begrenzung. Das Swap-Intervall ist überall 1.
+- `0x02413b70 = lfs f0, 0x28c4(r8)`: Die Hauptschleife (`0x02416250`) nimmt als Zeitschritt `+0x1c40` des Frame-Objekts, wenn es nicht 0 ist, sonst die gemessene Bildzeit (gekappt auf 0,1 s). Beim Start wird `+0x1c40` auf 1/30 gesetzt (`0x10082b54`), der Patch lädt stattdessen 0,0 (`0x100828c4`). Damit läuft die Engine mit variablem Zeitschritt und ohne Zeitlupe.
+
+Ergebnis auf dem Thor (Turnip T30): rund 45 FPS im Spiel (Logger: Ø 45,5, p99 26 ms), Bild ohne sichtbare Fehler. Tempo-Vergleich am nicht übersprungenen Intro (`tools/intro_timing.py`): Mit Patch erscheinen die Bilder zu denselben Zeitpunkten wie ohne Patch, Verhältnis 1,00 bei +5 bis +50 s.

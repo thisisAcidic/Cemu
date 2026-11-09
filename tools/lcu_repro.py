@@ -65,6 +65,7 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--rounds', type=int, default=8)
     ap.add_argument('--from-notice', action='store_true', help='game is already waiting at the autosave notice')
+    ap.add_argument('--record-intro', type=int, metavar='SECONDS', help='record the unskipped intro instead of playing')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -84,6 +85,12 @@ def main():
             time.sleep(3)
     wait_for(args.out, 'notice', lambda im: matches(im, 'notice'), 60)
     pad('press', BTN_A)
+    if args.record_intro:
+        adb('shell', f'screenrecord --time-limit {args.record_intro} /sdcard/intro.mp4')
+        adb('pull', '-q', '/sdcard/intro.mp4', os.path.join(args.out, 'intro.mp4'))
+        adb('shell', 'rm', '/sdcard/intro.mp4')
+        print('recorded')
+        return
     wait_for(args.out, 'loading', is_loading, 30)
     wait_for(args.out, 'intro', lambda im: not is_loading(im), 180)
     time.sleep(4)
