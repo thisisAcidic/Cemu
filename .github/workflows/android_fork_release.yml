@@ -42,9 +42,12 @@ jobs:
 
       - name: Determine version
         run: |
-          version=${GITHUB_REF_NAME#android-v}
-          echo "EMULATOR_VERSION_MAJOR=${version%%.*}" >> $GITHUB_ENV
-          echo "EMULATOR_VERSION_MINOR=${version#*.}" >> $GITHUB_ENV
+          if [[ ! "$GITHUB_REF_NAME" =~ ^android-v([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Release tags have to look like android-v1.2"
+            exit 1
+          fi
+          echo "EMULATOR_VERSION_MAJOR=${BASH_REMATCH[1]}" >> $GITHUB_ENV
+          echo "EMULATOR_VERSION_MINOR=${BASH_REMATCH[2]}" >> $GITHUB_ENV
 
       - name: Build Cemu
         env:
