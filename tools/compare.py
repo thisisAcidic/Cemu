@@ -21,14 +21,15 @@ def thread_load(run, window_s=70):
     path = os.path.join(ROOT, run, 'thermal.csv')
     rows = [r for r in csv.DictReader(l for l in open(path) if not l.startswith('#')) if r.get('core1_ticks') and int(r['core1_ticks']) > 0]
     if len(rows) < 2:
-        return '    -      -      -     -'
+        return '    -      -      -     -     -'
     end = int(rows[-1]['time']) - 5
     scene = [r for r in rows if end - window_s <= int(r['time']) <= end]
     if len(scene) < 2:
-        return '    -      -      -     -'
+        return '    -      -      -     -     -'
     seconds = int(scene[-1]['time']) - int(scene[0]['time'])
     load = lambda col: (int(scene[-1].get(col) or 0) - int(scene[0].get(col) or 0)) / seconds
     others = f' {load("core2_ticks"):5.0f}% {load("recompiler_ticks"):4.0f}%' if scene[0].get('core2_ticks') else '      -     -'
+    others += f' {load("llvm_ticks"):4.0f}%' if scene[0].get('llvm_ticks') else '     -'
     return f'{load("core1_ticks"):4.0f}% {load("gpu_thread_ticks"):5.0f}%' + others
 
 
@@ -61,7 +62,7 @@ def window_stats(run, window_s=70):
 
 
 def main():
-    print(f'{"run":22} {"fps":>5} {"p99":>6} {"<=16.7":>7} {">50ms":>5} {"power":>7} {"cpu max":>7} {"gpu max":>7} {"prime":>6} {"gpu":>5} {"core1":>5} {"gputh":>6} {"core2":>6} {"rec":>5} {"ddr":>5}   scene: {"cpu":>6} {"prime":>5} {"gold":>5}')
+    print(f'{"run":22} {"fps":>5} {"p99":>6} {"<=16.7":>7} {">50ms":>5} {"power":>7} {"cpu max":>7} {"gpu max":>7} {"prime":>6} {"gpu":>5} {"core1":>5} {"gputh":>6} {"core2":>6} {"rec":>5} {"llvm":>5} {"ddr":>5}   scene: {"cpu":>6} {"prime":>5} {"gold":>5}')
     for name in sys.argv[1:]:
         path = os.path.join(ROOT, name, 'summary.json')
         if not os.path.exists(path):

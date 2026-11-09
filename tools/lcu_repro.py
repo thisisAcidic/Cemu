@@ -82,6 +82,7 @@ def main():
     ap.add_argument('--intro-only', type=int, metavar='SECONDS', help='let the unskipped intro play for this long, no recording')
     ap.add_argument('--idle', type=int, metavar='SECONDS', help='stand still in game for this long instead of sweeping the camera')
     ap.add_argument('--cooldown', type=float, metavar='CELSIUS', help='wait until the hottest CPU zone is below this before starting')
+    ap.add_argument('--settle', type=int, metavar='SECONDS', help='stand still in game this long before measuring, e.g. until background translation is done')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -125,6 +126,8 @@ def main():
     time.sleep(5)
     wait_for(args.out, 'ingame', lambda im: not is_loading(im), 120)
     time.sleep(20)
+    if args.settle:
+        time.sleep(args.settle)
     screenshot(os.path.join(args.out, 'ingame.png'))
     if args.idle:
         end = time.time() + args.idle

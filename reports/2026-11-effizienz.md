@@ -134,6 +134,46 @@ Hafen, Stock-Takt, Qualcomm-Treiber, Dual Screen, letzte 70 s. Leistung = Akkule
 | GamePad-Branch mit Scissor-Fix | System-Treiber | **0 %** (897 Bilder, mittlere Differenz 0,08) |
 
 - **Hauptursache ist der Quest-Treiber 819.2**, der Scissor-Fehler kam dazu. Fix ist in `dev`.
+- Weitere Treiber mit demselben Test (Bilder mit über 90 % weißen Pixeln, 15 s):
+
+| Treiber | weiße Bilder | Helligkeit min/Median/max |
+|---|---|---|
+| System-Treiber | 0 von 897 | 101,8 / 102,0 / 102,3 |
+| Turnip 27.0.0-R2 | 0 von 898 | 101,8 / 102,1 / 102,5 |
+| Qualcomm 837.6 | **416 von 897** | 76,6 / 248,9 / 255,0 |
+
+- **Empfehlung:** System-Treiber oder Turnip 27.0.0-R2. Beide Quest-Treiber (819.2, 837.6) sind auf dem Thor unbrauchbar.
+
+## Rücksprung-Vorhersage und Code-Layout mit System-Treiber
+
+Saubere Vergleichsmessung ohne Quest-Treiber (Hafen, Akku):
+
+| Lauf | FPS | p99 | Leistung | Kern 1 | Prime-Takt in der Szene |
+|---|---|---|---|---|---|
+| r10-dev-stock | 59,7 | 18,8 ms | 8,94 W | 82 % | 2047 MHz |
+| r10-next-stock (+ Rücksprung-Vorhersage, Code-Layout) | 59,8 | 18,3 ms | **8,78 W** | 80 % | 1954 MHz |
+
+- Kleiner, aber in allen Größen gleichgerichteter Gewinn (Streuung rund 0,2 W). Beide Branches sind in `dev` gemergt (f7d2918d).
+- Die früheren 8,23 W aus r9-ret liefen mit 819.2 und sind nicht vergleichbar.
+
+## LLVM-Stufe (feature/llvm-recompiler)
+
+- LLVM 23.1.4 für Android arm64 gebaut (nur AArch64-Target, 3 GB installiert, statische Bibliotheken).
+- Neues Backend übersetzt die IML einer Funktion vor der Registervergabe nach LLVM IR, optimiert mit O2 und übersetzt mit ORC. Gast-Register werden lokale Variablen, nur geänderte werden am Ende zurückgeschrieben. Gast-Speicherzugriffe bleiben `volatile` (andere Kerne und die GPU lesen mit).
+- Das AArch64-Backend erzeugt pro Einsprungpunkt einen kleinen Thunk, der die LLVM-Funktion aufruft und über die Sprungtabelle weitermacht. Jump-Table, Invalidierung und Perf-Map bleiben dadurch unverändert. Funktionen mit HLE-Aufrufen oder unbekannten Operationen bleiben beim JIT.
+- Übersetzte Funktionen liegen dicht gepackt in eigenem ausführbarem Speicher (eigener ORC-Speichermanager), nicht eine Seite pro Funktion.
+- Einschalten über `llvm.enable` im Benutzerordner, Bauen mit `LLVM_DIR=…/lib/cmake/llvm ./gradlew assembleProfile`.
+- **Stufenweise Übersetzung:** Der JIT übersetzt jede Funktion sofort wie bisher, LLVM übersetzt sie danach im Hintergrund (niedrige Priorität, kleine Kerne) und übernimmt ihre Einsprungpunkte. Beide Backends haben an Einsprungpunkten denselben Registerzustand und können sich gegenseitig aufrufen.
+- **Cache:** Übersetzte Funktionen werden als Objektdateien pro Titel gespeichert (`cache/llvm/<titleid>.bin`, Schlüssel ist ein Hash des Gast-Codes und der Einsprungpunkte). Ab dem zweiten Start nimmt der Recompiler-Thread die LLVM-Fassung direkt.
+- Nur Register, die nach einem Einsprungpunkt gelesen werden, werden dort geladen (Liveness über die IML-Segmente). Stack-Zugriffe über r1 sind nicht `volatile`, damit LLVM sie paaren und weiterreichen kann.
+
+Funktionstests (Hafen, System-Treiber, 15 s Aufnahme):
+
+| Build | per LLVM übersetzt | Übersetzungszeit | Bild |
+|---|---|---|---|
+| llvm1 (LLVM beim ersten Aufruf, Flag-Sprünge noch abgelehnt) | 7.000 | 4 ms | 898 Bilder, 0 fehlerhaft |
+| llvm2 (alle Operationen, Stack nicht volatile) | 18.000 | 17 ms | 902 Bilder, 0 fehlerhaft, aber 28 FPS beim Eintreffen, weil neuer Code bis zur Übersetzung interpretiert wird |
+| llvm4 (stufenweise, Liveness) | läuft im Hintergrund | 40 ms (kleiner Kern) | 57 FPS sofort im Hafen |
 
 ## Offen
 - Gast-Register an Blockgrenzen (13,5 %), Float-Umwandlungen (10 %).
