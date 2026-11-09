@@ -32,12 +32,12 @@ struct FPReg
 	{
 	}
 	const size_t index;
-	const VReg VReg;
-	const QReg QReg;
-	const DReg DReg;
-	const SReg SReg;
-	const HReg HReg;
-	const BReg BReg;
+	const ::VReg VReg;
+	const ::QReg QReg;
+	const ::DReg DReg;
+	const ::SReg SReg;
+	const ::HReg HReg;
+	const ::BReg BReg;
 };
 
 struct GPReg
@@ -47,8 +47,8 @@ struct GPReg
 	{
 	}
 	const size_t index;
-	const XReg XReg;
-	const WReg WReg;
+	const ::XReg XReg;
+	const ::WReg WReg;
 };
 
 static const XReg HCPU_REG{HCPU_REG_ID}, PPC_REC_INSTANCE_REG{PPC_RECOMPILER_INSTANCE_DATA_REG_ID}, MEM_BASE_REG{MEMORY_BASE_REG_ID};
@@ -160,6 +160,9 @@ struct AArch64GenContext_t : CodeGenerator
 		for (int i = 0; i < MAX_JUMP_INSTR_COUNT; ++i)
 			nop();
 	}
+
+	// cold code emitted after the main code
+	std::vector<std::function<void()>> m_coldCode;
 
 	std::map<IMLSegment*, size_t> segmentStarts;
 	void storeSegmentStart(IMLSegment* imlSegment)
@@ -543,37 +546,37 @@ bool AArch64GenContext_t::r_r(IMLInstruction* imlInstruction)
 	WReg regR = gpReg<WReg>(imlInstruction->op_r_r.regR);
 	WReg regA = gpReg<WReg>(imlInstruction->op_r_r.regA);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_ASSIGN)
+	if (imlInstruction->operation == IMLOperation::OP_ASSIGN)
 	{
 		mov(regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_ENDIAN_SWAP)
+	else if (imlInstruction->operation == IMLOperation::OP_ENDIAN_SWAP)
 	{
 		rev(regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_ASSIGN_S8_TO_S32)
+	else if (imlInstruction->operation == IMLOperation::OP_ASSIGN_S8_TO_S32)
 	{
 		sxtb(regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_ASSIGN_S16_TO_S32)
+	else if (imlInstruction->operation == IMLOperation::OP_ASSIGN_S16_TO_S32)
 	{
 		sxth(regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_NOT)
+	else if (imlInstruction->operation == IMLOperation::OP_NOT)
 	{
 		mvn(regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_NEG)
+	else if (imlInstruction->operation == IMLOperation::OP_NEG)
 	{
 		neg(regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_CNTLZW)
+	else if (imlInstruction->operation == IMLOperation::OP_CNTLZW)
 	{
 		clz(regR, regA);
 	}
 	else
 	{
-		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r(): Unsupported operation {:x}", imlInstruction->operation);
+		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r(): Unsupported operation {:x}", static_cast<uint32>(imlInstruction->operation));
 		return false;
 	}
 	return true;
@@ -584,17 +587,17 @@ bool AArch64GenContext_t::r_s32(IMLInstruction* imlInstruction)
 	sint32 imm32 = imlInstruction->op_r_immS32.immS32;
 	WReg reg = gpReg<WReg>(imlInstruction->op_r_immS32.regR);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_ASSIGN)
+	if (imlInstruction->operation == IMLOperation::OP_ASSIGN)
 	{
 		mov(reg, imm32);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_LEFT_ROTATE)
+	else if (imlInstruction->operation == IMLOperation::OP_LEFT_ROTATE)
 	{
 		ror(reg, reg, 32 - (imm32 & 0x1f));
 	}
 	else
 	{
-		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_s32(): Unsupported operation {:x}", imlInstruction->operation);
+		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_s32(): Unsupported operation {:x}", static_cast<uint32>(imlInstruction->operation));
 		return false;
 	}
 	return true;
@@ -606,49 +609,49 @@ bool AArch64GenContext_t::r_r_s32(IMLInstruction* imlInstruction)
 	WReg regA = gpReg<WReg>(imlInstruction->op_r_r_s32.regA);
 	sint32 immS32 = imlInstruction->op_r_r_s32.immS32;
 
-	if (imlInstruction->operation == PPCREC_IML_OP_ADD)
+	if (imlInstruction->operation == IMLOperation::OP_ADD)
 	{
 		add_imm(regR, regA, immS32, TEMP_GPR1.WReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_SUB)
+	else if (imlInstruction->operation == IMLOperation::OP_SUB)
 	{
 		sub_imm(regR, regA, immS32, TEMP_GPR1.WReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_AND)
+	else if (imlInstruction->operation == IMLOperation::OP_AND)
 	{
 		mov(TEMP_GPR1.WReg, immS32);
 		and_(regR, regA, TEMP_GPR1.WReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_OR)
+	else if (imlInstruction->operation == IMLOperation::OP_OR)
 	{
 		mov(TEMP_GPR1.WReg, immS32);
 		orr(regR, regA, TEMP_GPR1.WReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_XOR)
+	else if (imlInstruction->operation == IMLOperation::OP_XOR)
 	{
 		mov(TEMP_GPR1.WReg, immS32);
 		eor(regR, regA, TEMP_GPR1.WReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_MULTIPLY_SIGNED)
+	else if (imlInstruction->operation == IMLOperation::OP_MULTIPLY_SIGNED)
 	{
 		mov(TEMP_GPR1.WReg, immS32);
 		mul(regR, regA, TEMP_GPR1.WReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_LEFT_SHIFT)
+	else if (imlInstruction->operation == IMLOperation::OP_LEFT_SHIFT)
 	{
 		lsl(regR, regA, (uint32)immS32 & 0x1f);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_RIGHT_SHIFT_U)
+	else if (imlInstruction->operation == IMLOperation::OP_RIGHT_SHIFT_U)
 	{
 		lsr(regR, regA, (uint32)immS32 & 0x1f);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_RIGHT_SHIFT_S)
+	else if (imlInstruction->operation == IMLOperation::OP_RIGHT_SHIFT_S)
 	{
 		asr(regR, regA, (uint32)immS32 & 0x1f);
 	}
 	else
 	{
-		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r_s32(): Unsupported operation {:x}", imlInstruction->operation);
+		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r_s32(): Unsupported operation {:x}", static_cast<uint32>(imlInstruction->operation));
 		cemu_assert_suspicious();
 		return false;
 	}
@@ -662,12 +665,12 @@ bool AArch64GenContext_t::r_r_s32_carry(IMLInstruction* imlInstruction)
 	WReg regCarry = gpReg<WReg>(imlInstruction->op_r_r_s32_carry.regCarry);
 
 	sint32 immS32 = imlInstruction->op_r_r_s32_carry.immS32;
-	if (imlInstruction->operation == PPCREC_IML_OP_ADD)
+	if (imlInstruction->operation == IMLOperation::OP_ADD)
 	{
 		adds_imm(regR, regA, immS32, TEMP_GPR1.WReg);
 		cset(regCarry, Cond::CS);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_ADD_WITH_CARRY)
+	else if (imlInstruction->operation == IMLOperation::OP_ADD_WITH_CARRY)
 	{
 		mov(TEMP_GPR1.WReg, immS32);
 		cmp(regCarry, 1);
@@ -690,80 +693,99 @@ bool AArch64GenContext_t::r_r_r(IMLInstruction* imlInstruction)
 	WReg regOperand1 = gpReg<WReg>(imlInstruction->op_r_r_r.regA);
 	WReg regOperand2 = gpReg<WReg>(imlInstruction->op_r_r_r.regB);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_ADD)
+	if (imlInstruction->operation == IMLOperation::OP_ADD)
 	{
 		add(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_SUB)
+	else if (imlInstruction->operation == IMLOperation::OP_SUB)
 	{
 		sub(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_OR)
+	else if (imlInstruction->operation == IMLOperation::OP_OR)
 	{
 		orr(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_AND)
+	else if (imlInstruction->operation == IMLOperation::OP_AND)
 	{
 		and_(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_XOR)
+	else if (imlInstruction->operation == IMLOperation::OP_XOR)
 	{
 		eor(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_MULTIPLY_SIGNED)
+	else if (imlInstruction->operation == IMLOperation::OP_MULTIPLY_SIGNED)
 	{
 		mul(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_SLW)
+	else if (imlInstruction->operation == IMLOperation::OP_SLW)
 	{
 		tst(regOperand2, 32);
 		lsl(regResult, regOperand1, regOperand2);
 		csel(regResult, regResult, wzr, Cond::EQ);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_SRW)
+	else if (imlInstruction->operation == IMLOperation::OP_SRW)
 	{
 		tst(regOperand2, 32);
 		lsr(regResult, regOperand1, regOperand2);
 		csel(regResult, regResult, wzr, Cond::EQ);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_LEFT_ROTATE)
+	else if (imlInstruction->operation == IMLOperation::OP_LEFT_ROTATE)
 	{
 		neg(TEMP_GPR1.WReg, regOperand2);
 		ror(regResult, regOperand1, TEMP_GPR1.WReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_RIGHT_SHIFT_S)
+	else if (imlInstruction->operation == IMLOperation::OP_RIGHT_SHIFT_S)
 	{
 		asr(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_RIGHT_SHIFT_U)
+	else if (imlInstruction->operation == IMLOperation::OP_RIGHT_SHIFT_U)
 	{
 		lsr(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_LEFT_SHIFT)
+	else if (imlInstruction->operation == IMLOperation::OP_LEFT_SHIFT)
 	{
 		lsl(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_DIVIDE_SIGNED)
+	else if (imlInstruction->operation == IMLOperation::OP_DIVIDE_SIGNED)
 	{
+		// sdiv returns 0 for a zero divisor and 0x80000000 on overflow, divw gives the dividend sign and -1
+		Label divisorZero;
+		Label overflow;
+		Label divide;
+		Label done;
+		cbz(regOperand2, divisorZero);
+		cmn(regOperand2, 1);
+		bne(divide);
+		mov(TEMP_GPR1.WReg, 0x80000000);
+		cmp(regOperand1, TEMP_GPR1.WReg);
+		beq(overflow);
+		L(divide);
 		sdiv(regResult, regOperand1, regOperand2);
+		b(done);
+		L(divisorZero);
+		asr(regResult, regOperand1, 31);
+		b(done);
+		L(overflow);
+		mov(regResult, 0xFFFFFFFF);
+		L(done);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_DIVIDE_UNSIGNED)
+	else if (imlInstruction->operation == IMLOperation::OP_DIVIDE_UNSIGNED)
 	{
 		udiv(regResult, regOperand1, regOperand2);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_MULTIPLY_HIGH_SIGNED)
+	else if (imlInstruction->operation == IMLOperation::OP_MULTIPLY_HIGH_SIGNED)
 	{
 		smull(reg64Result, regOperand1, regOperand2);
 		lsr(reg64Result, reg64Result, 32);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_MULTIPLY_HIGH_UNSIGNED)
+	else if (imlInstruction->operation == IMLOperation::OP_MULTIPLY_HIGH_UNSIGNED)
 	{
 		umull(reg64Result, regOperand1, regOperand2);
 		lsr(reg64Result, reg64Result, 32);
 	}
 	else
 	{
-		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r_r(): Unsupported operation {:x}", imlInstruction->operation);
+		cemuLog_log(LogType::Recompiler, "PPCRecompilerAArch64Gen_imlInstruction_r_r_r(): Unsupported operation {:x}", static_cast<uint32>(imlInstruction->operation));
 		return false;
 	}
 	return true;
@@ -776,12 +798,12 @@ bool AArch64GenContext_t::r_r_r_carry(IMLInstruction* imlInstruction)
 	WReg regB = gpReg<WReg>(imlInstruction->op_r_r_r_carry.regB);
 	WReg regCarry = gpReg<WReg>(imlInstruction->op_r_r_r_carry.regCarry);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_ADD)
+	if (imlInstruction->operation == IMLOperation::OP_ADD)
 	{
 		adds(regR, regA, regB);
 		cset(regCarry, Cond::CS);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_ADD_WITH_CARRY)
+	else if (imlInstruction->operation == IMLOperation::OP_ADD_WITH_CARRY)
 	{
 		cmp(regCarry, 1);
 		adcs(regR, regA, regB);
@@ -886,7 +908,7 @@ void* PPCRecompiler_virtualHLE(PPCInterpreter_t* ppcInterpreter, uint32 hleFuncI
 
 bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 {
-	if (imlInstruction->operation == PPCREC_IML_MACRO_B_TO_REG)
+	if (imlInstruction->operation == IMLOperation::MACRO_B_TO_REG)
 	{
 		WReg branchDstReg = gpReg<WReg>(imlInstruction->op_macro.paramReg);
 
@@ -897,7 +919,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		br(TEMP_GPR1.XReg);
 		return true;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_MACRO_BL)
+	else if (imlInstruction->operation == IMLOperation::MACRO_BL)
 	{
 		uint32 newLR = imlInstruction->op_macro.param + 4;
 
@@ -912,7 +934,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		br(TEMP_GPR1.XReg);
 		return true;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_MACRO_B_FAR)
+	else if (imlInstruction->operation == IMLOperation::MACRO_B_FAR)
 	{
 		uint32 newIP = imlInstruction->op_macro.param2;
 		uint64 lookupOffset = (uint64)offsetof(PPCRecompilerInstanceData_t, ppcRecompilerDirectJumpTable) + (uint64)newIP * 2ULL;
@@ -922,7 +944,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		br(TEMP_GPR1.XReg);
 		return true;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_MACRO_LEAVE)
+	else if (imlInstruction->operation == IMLOperation::MACRO_LEAVE)
 	{
 		uint32 currentInstructionAddress = imlInstruction->op_macro.param;
 		mov(TEMP_GPR1.XReg, (uint64)offsetof(PPCRecompilerInstanceData_t, ppcRecompilerDirectJumpTable)); // newIP = 0 special value for recompiler exit
@@ -931,12 +953,12 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		br(TEMP_GPR1.XReg);
 		return true;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_MACRO_DEBUGBREAK)
+	else if (imlInstruction->operation == IMLOperation::MACRO_DEBUGBREAK)
 	{
 		brk(0xf000);
 		return true;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_MACRO_COUNT_CYCLES)
+	else if (imlInstruction->operation == IMLOperation::MACRO_COUNT_CYCLES)
 	{
 		uint32 cycleCount = imlInstruction->op_macro.param;
 		AdrUimm adrCycles = AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, remainingCycles));
@@ -945,7 +967,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 		str(TEMP_GPR1.WReg, adrCycles);
 		return true;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_MACRO_HLE)
+	else if (imlInstruction->operation == IMLOperation::MACRO_HLE)
 	{
 		uint32 ppcAddress = imlInstruction->op_macro.param;
 		uint32 funcId = imlInstruction->op_macro.param2;
@@ -991,7 +1013,7 @@ bool AArch64GenContext_t::macro(IMLInstruction* imlInstruction)
 	}
 	else
 	{
-		cemuLog_log(LogType::Recompiler, "Unknown recompiler macro operation %d\n", imlInstruction->operation);
+		cemuLog_log(LogType::Recompiler, "Unknown recompiler macro operation %d\n", static_cast<sint32>(imlInstruction->operation));
 		cemu_assert_suspicious();
 	}
 	return false;
@@ -1194,22 +1216,49 @@ bool AArch64GenContext_t::fpr_store(IMLInstruction* imlInstruction, bool indexed
 	sint32 memOffset = imlInstruction->op_storeLoad.immS32;
 	uint8 mode = imlInstruction->op_storeLoad.mode;
 
-	if (mode == PPCREC_FPR_ST_MODE_SINGLE)
+	if (mode == PPCREC_FPR_ST_MODE_SINGLE || mode == PPCREC_FPR_ST_MODE_SINGLE_FTZ)
 	{
-		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
-		if (indexed)
-			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
-
 		if (imlInstruction->op_storeLoad.flags2.notExpanded)
 		{
 			// value is already in single format
 			fmov(TEMP_GPR2.WReg, dataSReg);
 		}
-		else
+		else if (mode == PPCREC_FPR_ST_MODE_SINGLE_FTZ)
 		{
 			fcvt(TEMP_FPR.SReg, dataDReg);
 			fmov(TEMP_GPR2.WReg, TEMP_FPR.SReg);
 		}
+		else
+		{
+			// stfs truncates instead of rounding, so build the result directly
+			Label denormal;
+			Label done;
+			fmov(TEMP_GPR2.XReg, dataDReg);
+			ubfx(TEMP_GPR1.XReg, TEMP_GPR2.XReg, 52, 11);
+			sub(TEMP_GPR1.WReg, TEMP_GPR1.WReg, 874);
+			cmp(TEMP_GPR1.WReg, 23);
+			blo(denormal);
+			lsr(TEMP_GPR1.XReg, TEMP_GPR2.XReg, 62);
+			ubfx(TEMP_GPR2.XReg, TEMP_GPR2.XReg, 29, 30);
+			orr(TEMP_GPR2.WReg, TEMP_GPR2.WReg, TEMP_GPR1.WReg, ShMod::LSL, 30);
+			L(done);
+			m_coldCode.emplace_back([this, denormal, done, dataDReg]() mutable
+			{
+				// scale denormals before extracting the mantissa
+				L(denormal);
+				mov(TEMP_GPR1.XReg, 0x4940000000000000ull); // 2^149
+				fmov(TEMP_FPR.DReg, TEMP_GPR1.XReg);
+				fmul(TEMP_FPR.DReg, TEMP_FPR.DReg, dataDReg);
+				fabs(TEMP_FPR.DReg, TEMP_FPR.DReg);
+				fcvtzs(TEMP_GPR1.WReg, TEMP_FPR.DReg);
+				lsr(TEMP_GPR2.XReg, TEMP_GPR2.XReg, 63);
+				orr(TEMP_GPR2.WReg, TEMP_GPR1.WReg, TEMP_GPR2.WReg, ShMod::LSL, 31);
+				b(done);
+			});
+		}
+		add_imm(TEMP_GPR1.WReg, memReg, memOffset, TEMP_GPR1.WReg);
+		if (indexed)
+			add(TEMP_GPR1.WReg, TEMP_GPR1.WReg, indexReg);
 		rev(TEMP_GPR2.WReg, TEMP_GPR2.WReg);
 		str(TEMP_GPR2.WReg, AdrExt(MEM_BASE_REG, TEMP_GPR1.WReg, ExtMod::UXTW));
 	}
@@ -1246,17 +1295,17 @@ void AArch64GenContext_t::fpr_r_r(IMLInstruction* imlInstruction)
 	auto imlRegR = imlInstruction->op_fpr_r_r.regR;
 	auto imlRegA = imlInstruction->op_fpr_r_r.regA;
 
-	if (imlInstruction->operation == PPCREC_IML_OP_FPR_FLOAT_TO_INT)
+	if (imlInstruction->operation == IMLOperation::OP_FPR_FLOAT_TO_INT)
 	{
 		fcvtzs(gpReg<WReg>(imlRegR), fpReg<DReg>(imlRegA));
 		return;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_INT_TO_FLOAT)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_INT_TO_FLOAT)
 	{
 		scvtf(fpReg<DReg>(imlRegR), gpReg<WReg>(imlRegA));
 		return;
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_BITCAST_INT_TO_FLOAT)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_BITCAST_INT_TO_FLOAT)
 	{
 		cemu_assert_debug(imlRegR.GetRegFormat() == IMLRegFormat::F64); // assuming target is always F64 for now
 		// exact operation depends on size of types. Floats are automatically promoted to double if the target is F64
@@ -1282,27 +1331,27 @@ void AArch64GenContext_t::fpr_r_r(IMLInstruction* imlInstruction)
 	DReg regR = fpReg<DReg>(imlRegR);
 	DReg regA = fpReg<DReg>(imlRegA);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_FPR_ASSIGN)
+	if (imlInstruction->operation == IMLOperation::OP_FPR_ASSIGN)
 	{
 		fmov(regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_MULTIPLY)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_MULTIPLY)
 	{
 		fmul(regR, regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_DIVIDE)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_DIVIDE)
 	{
 		fdiv(regR, regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_ADD)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_ADD)
 	{
 		fadd(regR, regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_SUB)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_SUB)
 	{
 		fsub(regR, regR, regA);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_FCTIWZ)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_FCTIWZ)
 	{
 		fcvtzs(regR, regA);
 	}
@@ -1318,15 +1367,15 @@ void AArch64GenContext_t::fpr_r_r_r(IMLInstruction* imlInstruction)
 	DReg regA = fpReg<DReg>(imlInstruction->op_fpr_r_r_r.regA);
 	DReg regB = fpReg<DReg>(imlInstruction->op_fpr_r_r_r.regB);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_FPR_MULTIPLY)
+	if (imlInstruction->operation == IMLOperation::OP_FPR_MULTIPLY)
 	{
 		fmul(regR, regA, regB);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_ADD)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_ADD)
 	{
 		fadd(regR, regA, regB);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_SUB)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_SUB)
 	{
 		fsub(regR, regA, regB);
 	}
@@ -1346,7 +1395,7 @@ void AArch64GenContext_t::fpr_r_r_r_r(IMLInstruction* imlInstruction)
 	DReg regB = fpReg<DReg>(imlInstruction->op_fpr_r_r_r_r.regB);
 	DReg regC = fpReg<DReg>(imlInstruction->op_fpr_r_r_r_r.regC);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_FPR_SELECT)
+	if (imlInstruction->operation == IMLOperation::OP_FPR_SELECT)
 	{
 		fcmp(regA, 0.0);
 		fcsel(regR, regC, regB, Cond::GE);
@@ -1362,31 +1411,31 @@ void AArch64GenContext_t::fpr_r(IMLInstruction* imlInstruction)
 	DReg regRDReg = fpReg<DReg>(imlInstruction->op_fpr_r.regR);
 	SReg regRSReg = fpReg<SReg>(imlInstruction->op_fpr_r.regR);
 
-	if (imlInstruction->operation == PPCREC_IML_OP_FPR_NEGATE)
+	if (imlInstruction->operation == IMLOperation::OP_FPR_NEGATE)
 	{
 		fneg(regRDReg, regRDReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_LOAD_ONE)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_LOAD_ONE)
 	{
 		fmov(regRDReg, 1.0);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_ABS)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_ABS)
 	{
 		fabs(regRDReg, regRDReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_NEGATIVE_ABS)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_NEGATIVE_ABS)
 	{
 		fabs(regRDReg, regRDReg);
 		fneg(regRDReg, regRDReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_ROUND_TO_SINGLE_PRECISION_BOTTOM)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_ROUND_TO_SINGLE_PRECISION_BOTTOM)
 	{
 		// convert to 32bit single
 		fcvt(regRSReg, regRDReg);
 		// convert back to 64bit double
 		fcvt(regRDReg, regRSReg);
 	}
-	else if (imlInstruction->operation == PPCREC_IML_OP_FPR_EXPAND_F32_TO_F64)
+	else if (imlInstruction->operation == IMLOperation::OP_FPR_EXPAND_F32_TO_F64)
 	{
 		// convert bottom to 64bit double
 		fcvt(regRDReg, regRSReg);
@@ -1453,138 +1502,138 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 		for (size_t i = 0; i < segIt->imlList.size(); i++)
 		{
 			IMLInstruction* imlInstruction = segIt->imlList.data() + i;
-			if (imlInstruction->type == PPCREC_IML_TYPE_R_NAME)
+			if (imlInstruction->type == IMLType::R_NAME)
 			{
 				aarch64GenContext.r_name(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_NAME_R)
+			else if (imlInstruction->type == IMLType::NAME_R)
 			{
 				aarch64GenContext.name_r(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R)
+			else if (imlInstruction->type == IMLType::R_R)
 			{
 				if (!aarch64GenContext.r_r(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_S32)
+			else if (imlInstruction->type == IMLType::R_S32)
 			{
 				if (!aarch64GenContext.r_s32(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32)
+			else if (imlInstruction->type == IMLType::R_R_S32)
 			{
 				if (!aarch64GenContext.r_r_s32(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32_CARRY)
+			else if (imlInstruction->type == IMLType::R_R_S32_CARRY)
 			{
 				if (!aarch64GenContext.r_r_s32_carry(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R)
+			else if (imlInstruction->type == IMLType::R_R_R)
 			{
 				if (!aarch64GenContext.r_r_r(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R_CARRY)
+			else if (imlInstruction->type == IMLType::R_R_R_CARRY)
 			{
 				if (!aarch64GenContext.r_r_r_carry(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE)
+			else if (imlInstruction->type == IMLType::COMPARE)
 			{
 				aarch64GenContext.compare(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE_S32)
+			else if (imlInstruction->type == IMLType::COMPARE_S32)
 			{
 				aarch64GenContext.compare_s32(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CONDITIONAL_JUMP)
+			else if (imlInstruction->type == IMLType::CONDITIONAL_JUMP)
 			{
 				aarch64GenContext.cjump(imlInstruction, segIt);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_JUMP)
+			else if (imlInstruction->type == IMLType::JUMP)
 			{
 				aarch64GenContext.jump(segIt);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CJUMP_CYCLE_CHECK)
+			else if (imlInstruction->type == IMLType::CJUMP_CYCLE_CHECK)
 			{
 				aarch64GenContext.conditionalJumpCycleCheck(segIt);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_MACRO)
+			else if (imlInstruction->type == IMLType::MACRO)
 			{
 				if (!aarch64GenContext.macro(imlInstruction))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD)
+			else if (imlInstruction->type == IMLType::LOAD)
 			{
 				if (!aarch64GenContext.load(imlInstruction, false))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD_INDEXED)
+			else if (imlInstruction->type == IMLType::LOAD_INDEXED)
 			{
 				if (!aarch64GenContext.load(imlInstruction, true))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_STORE)
+			else if (imlInstruction->type == IMLType::STORE)
 			{
 				if (!aarch64GenContext.store(imlInstruction, false))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_STORE_INDEXED)
+			else if (imlInstruction->type == IMLType::STORE_INDEXED)
 			{
 				if (!aarch64GenContext.store(imlInstruction, true))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_ATOMIC_CMP_STORE)
+			else if (imlInstruction->type == IMLType::ATOMIC_CMP_STORE)
 			{
 				aarch64GenContext.atomic_cmp_store(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CALL_IMM)
+			else if (imlInstruction->type == IMLType::CALL_IMM)
 			{
 				aarch64GenContext.call_imm(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_NO_OP)
+			else if (imlInstruction->type == IMLType::NO_OP)
 			{
 				// no op
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD)
+			else if (imlInstruction->type == IMLType::FPR_LOAD)
 			{
 				if (!aarch64GenContext.fpr_load(imlInstruction, false))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD_INDEXED)
+			else if (imlInstruction->type == IMLType::FPR_LOAD_INDEXED)
 			{
 				if (!aarch64GenContext.fpr_load(imlInstruction, true))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE)
+			else if (imlInstruction->type == IMLType::FPR_STORE)
 			{
 				if (!aarch64GenContext.fpr_store(imlInstruction, false))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE_INDEXED)
+			else if (imlInstruction->type == IMLType::FPR_STORE_INDEXED)
 			{
 				if (!aarch64GenContext.fpr_store(imlInstruction, true))
 					codeGenerationFailed = true;
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R)
+			else if (imlInstruction->type == IMLType::FPR_R_R)
 			{
 				aarch64GenContext.fpr_r_r(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R)
+			else if (imlInstruction->type == IMLType::FPR_R_R_R)
 			{
 				aarch64GenContext.fpr_r_r_r(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R_R)
+			else if (imlInstruction->type == IMLType::FPR_R_R_R_R)
 			{
 				aarch64GenContext.fpr_r_r_r_r(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R)
+			else if (imlInstruction->type == IMLType::FPR_R)
 			{
 				aarch64GenContext.fpr_r(imlInstruction);
 			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_COMPARE)
+			else if (imlInstruction->type == IMLType::FPR_COMPARE)
 			{
 				aarch64GenContext.fpr_compare(imlInstruction);
 			}
@@ -1592,7 +1641,7 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 			{
 				codeGenerationFailed = true;
 				cemu_assert_suspicious();
-				cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): Unsupported iml type {}", imlInstruction->type);
+				cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): Unsupported iml type {}", static_cast<uint32>(imlInstruction->type));
 			}
 		}
 	}
@@ -1603,11 +1652,16 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 		return false;
 	}
 
+	for (size_t i = 0; i < aarch64GenContext.m_coldCode.size(); i++)
+		aarch64GenContext.m_coldCode[i]();
+
+	const size_t codeSize = aarch64GenContext.getSize();
 	if (!aarch64GenContext.processAllJumps())
 	{
 		cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): some jumps exceeded the +/-128MB offset.");
 		return false;
 	}
+	aarch64GenContext.setSize(codeSize);
 
 	aarch64GenContext.readyRE();
 

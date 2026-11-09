@@ -1,5 +1,4 @@
 add_library(CemuUtil
-  boost/bluetooth.h
   bootSound/BootSoundReader.cpp
   bootSound/BootSoundReader.h
   ChunkedHeap/ChunkedHeap.h
@@ -39,6 +38,7 @@ add_library(CemuUtil
   helpers/SystemException.h
   helpers/TempState.h
   helpers/ZArchiveHelpers.h
+  helpers/ZipArchive.h
   highresolutiontimer/HighResolutionTimer.cpp
   highresolutiontimer/HighResolutionTimer.h
   ImageWriter/bmp.h

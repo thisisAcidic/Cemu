@@ -1,6 +1,7 @@
 project(cemuMain)
 
 option(CEMU_CXX_FLAGS "Additional flags used for compiling Cemu source code")
+separate_arguments(CEMU_CXX_FLAGS NATIVE_COMMAND ${CEMU_CXX_FLAGS})
 if(CEMU_CXX_FLAGS)
 	add_compile_options(${CEMU_CXX_FLAGS})
 endif()
@@ -11,6 +12,8 @@ endif()
 
 if(MSVC)
 	add_compile_definitions(WIN32_LEAN_AND_MEAN CURL_STATICLIB)
+	# generate symbols for Release build
+	string(APPEND CMAKE_CXX_FLAGS_RELEASE " /Zi")
 elseif(UNIX)
 	if(APPLE)
 		if (ENABLE_VULKAN)
@@ -84,6 +87,20 @@ else()
 
 	cemu_use_precompiled_header(CemuBin)
 
+	if(MSVC)
+		# set pdb and linker options for Release builds
+		target_link_options(CemuBin PRIVATE
+			"$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF;/INCREMENTAL:NO>"
+		)
+		if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+			# produce pdb in a subdirectory and then strip it to decrease shipping size
+			set_property(TARGET CemuBin PROPERTY PDB_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/symbols")
+			target_link_options(CemuBin PRIVATE
+				"$<$<CONFIG:Release>:/PDBSTRIPPED:$<TARGET_FILE_DIR:CemuBin>/$<TARGET_FILE_BASE_NAME:CemuBin>.pdb>"
+			)
+		endif()
+	endif()
+
 	if(MSVC AND MSVC_VERSION EQUAL 1940)
 		# workaround for an msvc issue on VS 17.10 where generated ILK files are too large
 		# see https://developercommunity.visualstudio.com/t/After-updating-to-VS-1710-the-size-of-/10665511
@@ -155,10 +172,8 @@ if (MACOS_BUNDLE)
 		endif()
 	endif()
 
-	set(UPDATE_SH_PATH "${CMAKE_SOURCE_DIR}/src/resource/update.sh")
 	set(APP_BUNDLE_DIR "$<TARGET_BUNDLE_DIR:CemuBin>")
 	set(FRAMEWORKS_DIR "${APP_BUNDLE_DIR}/Contents/Frameworks")
-	set(RESOURCES_DIR  "${APP_BUNDLE_DIR}/Contents/Resources")
 
 	if (ENABLE_VULKAN)
 		add_custom_command(TARGET CemuBin POST_BUILD
@@ -167,14 +182,6 @@ if (MACOS_BUNDLE)
 				"${FRAMEWORKS_DIR}/libMoltenVK.dylib"
 		)
 	endif()
-
-	add_custom_command(TARGET CemuBin POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy
-			"${UPDATE_SH_PATH}"
-			"${RESOURCES_DIR}/update.sh"
-		COMMAND chmod 755
-			"${RESOURCES_DIR}/update.sh"
-	)
 
 	if (ENABLE_LIBUSB)
 		add_custom_command(TARGET CemuBin POST_BUILD
@@ -225,6 +232,10 @@ set_target_properties(CemuBin PROPERTIES
 	OUTPUT_NAME "${OUTPUT_NAME}"
 )
 
+if(ENABLE_SDL)
+	target_link_libraries(CemuBin PRIVATE SDL3::SDL3)
+endif()
+
 target_link_libraries(CemuBin PRIVATE
 	CemuAudio
 	CemuCafe
@@ -235,10 +246,6 @@ target_link_libraries(CemuBin PRIVATE
 	CemuInput
 	CemuUtil
 )
-
-if(ENABLE_SDL)
-	target_link_libraries(CemuBin PRIVATE SDL3::SDL3)
-endif()
 
 if(UNIX AND NOT APPLE)
 	# due to nasm output some linkers will make stack executable

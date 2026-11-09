@@ -13,6 +13,8 @@ namespace nn
 {
 	namespace fp
 	{
+		constinit COSStaticData s_nnfpStaticData;
+
 		static const auto FPResult_OkZero = 0;
 		static const auto FPResult_Ok = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_FP, 0);
 		static const auto FPResult_InvalidIPCParam = BUILD_NN_RESULT(NN_RESULT_LEVEL_LVL6, NN_RESULT_MODULE_NN_FP, 0x680);
@@ -24,12 +26,12 @@ namespace nn
 			bool isAdminMode;
 			bool isLoggedIn;
 			IOSDevHandle fpdHandle;
-			SysAllocator<coreinit::OSMutex> fpMutex;
-			SysAllocator<uint8, 0x12000> g_fpdAllocatorSpace;
+			CafeStaticVar<coreinit::OSMutex> fpMutex{s_nnfpStaticData};
+			CafeStaticVar<uint8, 0x12000> g_fpdAllocatorSpace{s_nnfpStaticData};
 			VHeap* fpBufferHeap{nullptr};
 			// PPC buffers for async notification query
-			SysAllocator<uint32be> notificationCount;
-			SysAllocator<iosu::fpd::FPDNotification, 256> notificationBuffer;
+			CafeStaticVar<uint32be> notificationCount{s_nnfpStaticData};
+			CafeStaticVar<iosu::fpd::FPDNotification, 256> notificationBuffer{s_nnfpStaticData};
 			bool getNotificationCalled{false};
 			// notification handler
 			MEMPTR<void> notificationHandler{nullptr};
@@ -49,6 +51,7 @@ namespace nn
 			{
 				std::unique_lock _l(m_mtx);
 				delete g_fp.fpBufferHeap;
+				g_fp.fpBufferHeap = nullptr;
 			}
 
 			void* Allocate(uint32 size, uint32 alignment)
@@ -484,7 +487,7 @@ namespace nn
 		{
 			FP_API_BASE();
 			auto ipcCtx = std::make_unique<FPIpcContext>(iosu::fpd::FPD_REQUEST_ID::GetMyComment);
-			ipcCtx->AddOutput(myComment, iosu::fpd::MY_COMMENT_LENGTH * sizeof(uint16be));
+			ipcCtx->AddOutput(myComment, sizeof(iosu::fpd::Comment));
 			return ipcCtx->Submit(std::move(ipcCtx));
 		}
 
@@ -627,13 +630,13 @@ namespace nn
 		{
 			FP_API_BASE();
 			auto ipcCtx = std::make_unique<FPIpcContext>(iosu::fpd::FPD_REQUEST_ID::UpdateCommentAsync);
-			uint32 commentLen = CafeStringHelpers::Length(newComment, iosu::fpd::MY_COMMENT_LENGTH-1);
-			if (commentLen >= iosu::fpd::MY_COMMENT_LENGTH-1)
+			uint32 commentLen = CafeStringHelpers::Length(newComment, iosu::fpd::MY_COMMENT_LENGTH);
+			if (commentLen >= iosu::fpd::MY_COMMENT_LENGTH)
 			{
 				cemuLog_log(LogType::Force, "UpdateCommentAsync: message too long");
 				return FPResult_InvalidIPCParam;
 			}
-			ipcCtx->AddInput(newComment, sizeof(uint16be) * commentLen + 2);    
+			ipcCtx->AddInput(newComment, sizeof(uint16be) * (commentLen + 1));
 			return ipcCtx->SubmitAsync(std::move(ipcCtx), funcPtr, customParam);
 		}
 
@@ -766,11 +769,19 @@ namespace nn
 				return "nn_fp";
 			}
 
+			void RPLUnmapped() override
+			{
+				FPIpcBufferAllocator.Destroy();
+				s_nnfpStaticData.Deallocate();
+			}
+
 			void RPLMapped() override
 			{
+				s_nnfpStaticData.Allocate();
 				g_fp.initCounter = 0;
 				g_fp.isAdminMode = false;
 				g_fp.isLoggedIn = false;
+				g_fp.fpdHandle = 0;
 				g_fp.getNotificationCalled = false;
 				g_fp.notificationHandler = nullptr;
 				g_fp.notificationHandlerParam = nullptr;
@@ -840,4 +851,3 @@ namespace nn
 
 	}
 }
-

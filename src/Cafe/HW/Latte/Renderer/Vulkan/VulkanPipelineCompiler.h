@@ -6,7 +6,7 @@ class PipelineCompiler : public VKRMoveableRefCounter
 {
 private:
 	// helper functions
-	VkFormat GetVertexFormat(uint8 format);
+	VkFormat GetVertexFormat(Latte::E_HWFMT format);
 	bool ConsumesBlendConstants(VkBlendFactor blendFactor);
 
 	void CreateDescriptorSetLayout(VulkanRenderer* vkRenderer, LatteDecompilerShader* shader, VkDescriptorSetLayout& layout, PipelineInfo* vkrPipelineInfo);
@@ -61,6 +61,8 @@ public:
 	std::vector<VkVertexInputAttributeDescription> vertexInputAttributeDescription;
 	std::vector<VkVertexInputBindingDescription> vertexInputBindingDescription;
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+	std::vector<VkVertexInputBindingDivisorDescriptionKHR> m_vertexInputBindingDivisors;
+	VkPipelineVertexInputDivisorStateCreateInfoKHR m_vertexInputDivisorState{};
 
 	/* input assembly state */
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly{};

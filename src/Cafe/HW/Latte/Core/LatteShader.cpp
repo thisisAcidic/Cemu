@@ -172,7 +172,7 @@ void LatteSHRC_RemoveFromCaches(LatteDecompilerShader* shader)
             cemu_assert_debug(shader->baseHash == shader->next->baseHash);
             cache.emplace(shader->baseHash, shader->next);
         }
-        shader->next = 0;
+        shader->next = nullptr;
 		removed = true;
 	}
 	else
@@ -187,6 +187,7 @@ void LatteSHRC_RemoveFromCaches(LatteDecompilerShader* shader)
 				removed = true;
 				break;
 			}
+			shaderChain = shaderChain->next;
 		}
 	}
 	cemu_assert(removed);
@@ -543,7 +544,7 @@ void LatteSHRC_UpdateVSBaseHash(uint8* vertexShaderPtr, uint32 vertexShaderSize,
 		{
       		for (sint32 g = 0; g < fetchShader->bufferGroups.size(); g++)
             {
-           	    LatteParsedFetchShaderBufferGroup_t& group = fetchShader->bufferGroups[g];
+           	    LatteParsedFetchShaderBufferGroup& group = fetchShader->bufferGroups[g];
           		uint32 bufferIndex = group.attributeBufferIndex;
           		uint32 bufferBaseRegisterIndex = mmSQ_VTX_ATTRIBUTE_BLOCK_START + bufferIndex * 7;
           		uint32 bufferStride = (LatteGPUState.contextRegister[bufferBaseRegisterIndex + 2] >> 11) & 0xFFFF;
@@ -712,6 +713,8 @@ static void InitUniformLayoutFromDecompiler(
     shader->uniform.loc_alphaTestRef = offsets.offset_alphaTestRef;
     shader->uniform.loc_pointSize = offsets.offset_pointSize;
     shader->uniform.loc_fragCoordScale = offsets.offset_fragCoordScale;
+    for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
+        shader->uniform.loc_framebufferFetchSize[t] = offsets.offset_framebufferFetchSize[t];
 
     // Texture scale uniforms
     shader->uniform.list_ufTexRescale.clear();
@@ -1245,6 +1248,7 @@ void LatteSHRC_UpdateActiveShaders()
 			_activeVertexShader = shaderStateInfo->vertexShader;
 			_activePixelShader = shaderStateInfo->pixelShader;
 			_activeGeometryShader = shaderStateInfo->geometryShader;
+			LatteGPUState.activeShaderHasError = shaderStateInfo->shaderError;
 			return;
 		}
 		for (auto& auxVariant : shaderStateInfo->auxVariants)
@@ -1255,6 +1259,7 @@ void LatteSHRC_UpdateActiveShaders()
 				_activeVertexShader = auxVariant.vertexShader;
 				_activePixelShader = auxVariant.pixelShader;
 				_activeGeometryShader = auxVariant.geometryShader;
+				LatteGPUState.activeShaderHasError = auxVariant.hasError;
 				return;
 			}
 		}
@@ -1262,13 +1267,19 @@ void LatteSHRC_UpdateActiveShaders()
 	// no cache entry found, get/create shaders individually and add to cache
 	LatteFetchShader* fetchShader = LatteSHRC_GetOrCreateFetchShader();
 	_activeFetchShader = fetchShader;
+
+	// check whether shaders have errors
 	bool shaderError = LatteGPUState.activeShaderHasError;
 	LatteDecompilerShader* vertexShader = LatteSHRC_GetOrCreateVertexShader((uint8*)memory_getPointerFromPhysicalOffset(vsProgramAddr), vsProgramSize, geometryShaderUsed, fetchShader);
-	shaderError |= LatteGPUState.activeShaderHasError;
+	if (vertexShader)
+		shaderError |= vertexShader->hasError;
 	LatteDecompilerShader* pixelShader = LatteSHRC_GetOrCreatePixelShader((uint8*)memory_getPointerFromPhysicalOffset(psProgramAddr), psProgramSize, geometryShaderUsed);
-	shaderError |= LatteGPUState.activeShaderHasError;
+	if (pixelShader)
+		shaderError |= pixelShader->hasError;
 	LatteDecompilerShader* geometryShader = LatteSHRC_GetOrCreateGeometryShader(geometryShaderUsed, (uint8*)memory_getPointerFromPhysicalOffset(gsProgramAddr), gsProgramSize, (uint8*)memory_getPointerFromPhysicalOffset(copyProgramAddr), copyProgramSize, vertexShader);
-	shaderError |= LatteGPUState.activeShaderHasError;
+	if (geometryShader)
+		shaderError |= geometryShader->hasError;
+
 	uint64 combinedAuxHash = CalcCombinedAuxHash(fetchShader, vertexShader, pixelShader);
 
 	if (!shaderStateInfo)

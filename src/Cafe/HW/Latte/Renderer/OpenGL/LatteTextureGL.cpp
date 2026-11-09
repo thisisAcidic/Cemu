@@ -105,6 +105,19 @@ void LatteTextureGL::GetOpenGLFormatInfo(bool isDepth, Latte::E_GX2SURFFMT forma
 		return;
 	}
 
+	const auto hwFormat = Latte::GetHWFormat(format);
+	if (hwFormat == Latte::E_HWFMT::HWFMT_BC1 || hwFormat == Latte::E_HWFMT::HWFMT_BC2 || hwFormat == Latte::E_HWFMT::HWFMT_BC3)
+	{
+		const bool isSRGB = HAS_FLAG(format, Latte::E_GX2SURFFMT::FMT_BIT_SRGB);
+		if (!OpenGLRenderer::GetInstance()->SupportsS3TC(isSRGB))
+		{
+			// fall back to software decoding, with sRGB conversion handled by the texture sampler
+			formatInfoOut->setFormat(isSRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8, GL_RGBA, GL_FLOAT);
+			formatInfoOut->markAsAlternativeFormat();
+			return;
+		}
+	}
+
 	bool glIsCompressed = false;
 	bool isUsingAlternativeFormat = false; // set to true if there is no bit-perfect matching OpenGL format
 	sint32 glInternalFormat;
@@ -153,9 +166,10 @@ void LatteTextureGL::GetOpenGLFormatInfo(bool isDepth, Latte::E_GX2SURFFMT forma
 	}
 	else if (format == Latte::E_GX2SURFFMT::BC2_UNORM || format == Latte::E_GX2SURFFMT::BC2_SRGB)
 	{
-		// todo - use OpenGL BC2 format if available
-		formatInfoOut->setFormat(GL_RGBA16F, GL_RGBA, GL_FLOAT);
-		formatInfoOut->markAsAlternativeFormat();
+		if (format == Latte::E_GX2SURFFMT::BC2_SRGB)
+			formatInfoOut->setCompressed(GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT, -1, -1);
+		else
+			formatInfoOut->setCompressed(GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, -1, -1);
 		return;
 	}
 	else if (format == Latte::E_GX2SURFFMT::BC3_UNORM || format == Latte::E_GX2SURFFMT::BC3_SRGB)
@@ -385,6 +399,14 @@ void LatteTextureGL::GetOpenGLFormatInfo(bool isDepth, Latte::E_GX2SURFFMT forma
 		// supplied format
 		glSuppliedFormat = GL_RGBA_INTEGER;
 		glSuppliedFormatType = GL_UNSIGNED_INT;
+		glIsCompressed = false;
+	}
+	else if (format == Latte::E_GX2SURFFMT::R32_G32_B32_A32_SINT)
+	{
+		glInternalFormat = GL_RGBA32I;
+		// supplied format
+		glSuppliedFormat = GL_RGBA_INTEGER;
+		glSuppliedFormatType = GL_INT;
 		glIsCompressed = false;
 	}
 	else if (format == Latte::E_GX2SURFFMT::R16_G16_B16_A16_UINT)
