@@ -159,7 +159,7 @@ bool SupportsLoadingCustomDriver()
 
 #ifdef __aarch64__
 
-constexpr auto CUSTOM_DRIVER_LIB_NAME = "custom_vulkan.so";
+constexpr auto CUSTOM_DRIVER_DIR_NAME = "customDriver";
 
 #include <adrenotools/driver.h>
 #include <rapidjson/document.h>
@@ -218,16 +218,25 @@ void* load_custom_driver()
 	if (driver_name.empty())
 		return nullptr;
 
+	// libraries can only be loaded from internal storage. Copy the whole package, since Qualcomm driver packages
+	// come with their own versions of the libraries the driver links against
 	std::error_code ec;
-	fs::copy(fs::path(driver_path.value()) / driver_name, ActiveSettings::GetInternalPath(CUSTOM_DRIVER_LIB_NAME), fs::copy_options::overwrite_existing, ec);
+	const fs::path driverDir = ActiveSettings::GetInternalPath(CUSTOM_DRIVER_DIR_NAME);
+	fs::remove_all(driverDir, ec);
+	fs::create_directories(driverDir, ec);
+	for (const auto& entry : fs::directory_iterator(driver_path.value(), ec))
+	{
+		if (entry.is_regular_file(ec))
+			fs::copy_file(entry.path(), driverDir / entry.path().filename(), fs::copy_options::overwrite_existing, ec);
+	}
 
 	void* vulkan_so = adrenotools_open_libvulkan(
 		RTLD_NOW | RTLD_LOCAL,
 		ADRENOTOOLS_DRIVER_CUSTOM,
 		nullptr,
 		(ActiveSettings::GetNativeLibPath().string() + "/").c_str(),
-		(ActiveSettings::GetInternalPath().string() + "/").c_str(),
-		CUSTOM_DRIVER_LIB_NAME,
+		(driverDir.string() + "/").c_str(),
+		driver_name.c_str(),
 		nullptr,
 		nullptr);
 	if (!vulkan_so)
@@ -300,7 +309,7 @@ void CleanupGlobalVulkan()
 
 #if BOOST_PLAT_ANDROID && defined(__aarch64__)
 	std::error_code ec;
-	fs::remove(ActiveSettings::GetInternalPath(CUSTOM_DRIVER_LIB_NAME), ec);
+	fs::remove_all(ActiveSettings::GetInternalPath(CUSTOM_DRIVER_DIR_NAME), ec);
 #endif
 }
 
