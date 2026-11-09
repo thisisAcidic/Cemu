@@ -112,6 +112,23 @@ public:
 			m_condition.wait(lock);
 	}
 
+	// wait until non-zero, until notify() is called or until the timeout passed
+	// the timeout is queried while holding the lock, so notify() calls made after any change it depends on can't get lost
+	// may wake up spuriously
+	template<typename TGetTimeout>
+	void waitUntilNonZeroOrNotified(TGetTimeout getTimeout)
+	{
+		std::unique_lock lock(m_mutex);
+		if (m_count == 0)
+			m_condition.wait_for(lock, getTimeout());
+	}
+
+	void notify()
+	{
+		std::lock_guard lock(m_mutex);
+		m_condition.notify_all();
+	}
+
 	bool isZero() const
 	{
 		return m_count == 0;
