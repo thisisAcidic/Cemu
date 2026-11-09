@@ -46,6 +46,19 @@ def is_loading(im):
     return b > 120 and b > r * 1.8
 
 
+def max_cpu_temp():
+    temps = adb('shell', 'for z in /sys/class/thermal/thermal_zone*; do case $(cat $z/type) in cpu-*) cat $z/temp;; esac; done')
+    return max(int(t) for t in temps.split()) / 1000
+
+
+def cool_down(limit):
+    t = max_cpu_temp()
+    while t > limit:
+        print(f'cooling down: {t:.1f} C')
+        time.sleep(20)
+        t = max_cpu_temp()
+
+
 def wait_for(out, label, cond, timeout):
     end = time.time() + timeout
     n = 0
@@ -66,11 +79,16 @@ def main():
     ap.add_argument('--rounds', type=int, default=8)
     ap.add_argument('--from-notice', action='store_true', help='game is already waiting at the autosave notice')
     ap.add_argument('--record-intro', type=int, metavar='SECONDS', help='record the unskipped intro instead of playing')
+    ap.add_argument('--intro-only', type=int, metavar='SECONDS', help='let the unskipped intro play for this long, no recording')
+    ap.add_argument('--idle', type=int, metavar='SECONDS', help='stand still in game for this long instead of sweeping the camera')
+    ap.add_argument('--cooldown', type=float, metavar='CELSIUS', help='wait until the hottest CPU zone is below this before starting')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
     if not args.from_notice:
         adb('shell', 'am', 'force-stop', PKG)
+        if args.cooldown:
+            cool_down(args.cooldown)
         if args.apk != '-':
             print(adb('install', '-r', args.apk).strip().splitlines()[-1])
         adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
@@ -85,10 +103,17 @@ def main():
             time.sleep(3)
     wait_for(args.out, 'notice', lambda im: matches(im, 'notice'), 60)
     pad('press', BTN_A)
+    if args.intro_only:
+        time.sleep(args.intro_only)
+        screenshot(os.path.join(args.out, 'intro_end.png'))
+        adb('shell', 'am', 'force-stop', PKG)
+        print('intro done')
+        return
     if args.record_intro:
         adb('shell', f'screenrecord --time-limit {args.record_intro} /sdcard/intro.mp4')
         adb('pull', '-q', '/sdcard/intro.mp4', os.path.join(args.out, 'intro.mp4'))
         adb('shell', 'rm', '/sdcard/intro.mp4')
+        adb('shell', 'am', 'force-stop', PKG)
         print('recorded')
         return
     wait_for(args.out, 'loading', is_loading, 30)
@@ -101,9 +126,18 @@ def main():
     wait_for(args.out, 'ingame', lambda im: not is_loading(im), 120)
     time.sleep(20)
     screenshot(os.path.join(args.out, 'ingame.png'))
-    for i in range(1, args.rounds + 1):
-        pad('look', 12)
-        screenshot(os.path.join(args.out, f'look_{i}.png'))
+    if args.idle:
+        end = time.time() + args.idle
+        i = 1
+        while time.time() < end:
+            time.sleep(min(60, max(0, end - time.time())))
+            screenshot(os.path.join(args.out, f'idle_{i}.png'))
+            i += 1
+    else:
+        for i in range(1, args.rounds + 1):
+            pad('look', 12)
+            screenshot(os.path.join(args.out, f'look_{i}.png'))
+    adb('shell', 'am', 'force-stop', PKG)
     adb('pull', '-q', f'{FILES}/log.txt', os.path.join(args.out, 'log.txt'))
     print('done')
 
