@@ -1047,7 +1047,19 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 	bool showDRC = swkbd::hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 
 	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
-		LatteRenderTarget_copyToBackbuffer(texView, true);
+	{
+		// experiment: padinterval.txt in the user data folder with N only updates the GamePad window every N-th frame
+		static uint32 s_padUpdateInterval = []() -> uint32 {
+			std::unique_ptr<FileStream> fs(FileStream::openFile2(ActiveSettings::GetUserDataPath("padinterval.txt")));
+			std::string line;
+			if (fs && fs->readLine(line))
+				return std::max(1, atoi(line.c_str()));
+			return 1;
+		}();
+		static uint32 s_padFrame = 0;
+		if ((s_padFrame++ % s_padUpdateInterval) == 0)
+			LatteRenderTarget_copyToBackbuffer(texView, true);
+	}
 	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
 		LatteRenderTarget_copyToBackbuffer(texView, false);
 }
