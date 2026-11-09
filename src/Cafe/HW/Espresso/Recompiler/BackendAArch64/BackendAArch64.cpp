@@ -161,12 +161,13 @@ struct AArch64GenContext_t : CodeGenerator
 	void jump(IMLSegment* imlSegment);
 	void conditionalJumpCycleCheck(IMLSegment* imlSegment);
 
-	static constexpr size_t MAX_JUMP_INSTR_COUNT = 2;
+	// instructions reserved per jump. Most jumps fit into one, functions with jumps that don't are generated again with two
+	size_t m_jumpInstrCount = 1;
 	std::list<std::pair<size_t, JumpInfo>> jumps;
 	void prepareJump(JumpInfo&& jumpInfo)
 	{
 		jumps.emplace_back(getSize(), jumpInfo);
-		for (int i = 0; i < MAX_JUMP_INSTR_COUNT; ++i)
+		for (size_t i = 0; i < m_jumpInstrCount; ++i)
 			nop();
 	}
 
@@ -179,8 +180,9 @@ struct AArch64GenContext_t : CodeGenerator
 		segmentStarts[imlSegment] = getSize();
 	}
 
-	bool processAllJumps()
+	bool processAllJumps(bool& needsMoreJumpInstructions)
 	{
+		needsMoreJumpInstructions = false;
 		for (auto jump : jumps)
 		{
 			auto jumpStart = jump.first;
@@ -195,6 +197,11 @@ struct AArch64GenContext_t : CodeGenerator
 				jumpInfo);
 			if (!success)
 			{
+				return false;
+			}
+			if (getSize() - jumpStart > m_jumpInstrCount * CSIZE)
+			{
+				needsMoreJumpInstructions = true;
 				return false;
 			}
 		}
@@ -1529,10 +1536,12 @@ void AArch64GenContext_t::call_imm(IMLInstruction* imlInstruction)
 	ldr(x30, AdrPostImm(sp, 16));
 }
 
-bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
+static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext, size_t jumpInstrCount, bool& needsMoreJumpInstructions)
 {
 	AArch64Allocator allocator;
 	AArch64GenContext_t aarch64GenContext{&allocator};
+	aarch64GenContext.m_jumpInstrCount = jumpInstrCount;
+	needsMoreJumpInstructions = false;
 
 	// generate iml instruction code
 	bool codeGenerationFailed = false;
@@ -1705,9 +1714,10 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 		aarch64GenContext.m_coldCode[i]();
 
 	const size_t codeSize = aarch64GenContext.getSize();
-	if (!aarch64GenContext.processAllJumps())
+	if (!aarch64GenContext.processAllJumps(needsMoreJumpInstructions))
 	{
-		cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): some jumps exceeded the +/-128MB offset.");
+		if (!needsMoreJumpInstructions)
+			cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): some jumps exceeded the +/-128MB offset.");
 		return false;
 	}
 	aarch64GenContext.setSize(codeSize);
@@ -1720,6 +1730,16 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 	// set free disabled to skip freeing the code from the CodeGenerator destructor
 	allocator.setFreeDisabled(true);
 	return true;
+}
+
+bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
+{
+	bool needsMoreJumpInstructions;
+	if (PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 1, needsMoreJumpInstructions))
+		return true;
+	if (!needsMoreJumpInstructions)
+		return false;
+	return PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 2, needsMoreJumpInstructions);
 }
 
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
