@@ -160,6 +160,16 @@ void LatteStreamout_FinishDrawcall(bool useDirectMemoryMode);
 
 // timing
 
+// the GamePad window can be updated less often than the TV image to save power
+enum class LattePadUpdateMode : uint8
+{
+	Full,
+	Automatic, // at least 30 FPS
+	Low, // at least 10 FPS
+};
+void LatteRenderTarget_SetPadUpdatePolicy(LattePadUpdateMode mode, bool padIsMainScreen);
+void LatteRenderTarget_NotifyPadTouched();
+
 void LatteTiming_Init();
 void LatteTiming_HandleTimedVsync();
 std::chrono::microseconds LatteTiming_GetTimeUntilTimedVsync();

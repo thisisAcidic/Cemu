@@ -51,6 +51,15 @@ object NativeEmulation {
     @JvmStatic
     external fun setReplaceTVWithPadView(swapped: Boolean)
 
+    object PadUpdateMode {
+        const val FULL: Int = 0
+        const val AUTOMATIC: Int = 1
+        const val LOW: Int = 2
+    }
+
+    @JvmStatic
+    external fun setPadUpdatePolicy(mode: Int, padIsMainScreen: Boolean)
+
     @JvmStatic
     external fun supportsLoadingCustomDriver(): Boolean
 }

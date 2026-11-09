@@ -1011,6 +1011,39 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	g_renderer->ImguiEnd();
 }
 
+static std::atomic<LattePadUpdateMode> s_padUpdateMode{LattePadUpdateMode::Full};
+static std::atomic_bool s_padIsMainScreen{false};
+static std::atomic<uint32> s_padLastTouchTick{0};
+
+void LatteRenderTarget_SetPadUpdatePolicy(LattePadUpdateMode mode, bool padIsMainScreen)
+{
+	s_padUpdateMode = mode;
+	s_padIsMainScreen = padIsMainScreen;
+}
+
+void LatteRenderTarget_NotifyPadTouched()
+{
+	s_padLastTouchTick = GetTickCount();
+}
+
+// the GamePad window stays at full rate while it is the main screen or was touched within the last two seconds
+static bool LatteRenderTarget_ShouldUpdatePadWindow()
+{
+	static uint32 s_lastUpdateTick = 0;
+	uint32 minInterval = 0;
+	if (s_padUpdateMode == LattePadUpdateMode::Automatic)
+		minInterval = 1000 / 30;
+	else if (s_padUpdateMode == LattePadUpdateMode::Low)
+		minInterval = 1000 / 10;
+	const uint32 currentTick = GetTickCount();
+	const bool fullRate = minInterval == 0 || s_padIsMainScreen || (currentTick - s_padLastTouchTick) < 2000;
+	// frames don't arrive exactly on time, a bit of tolerance keeps a 60 FPS game at every second frame instead of every third
+	if (!fullRate && (currentTick - s_lastUpdateTick) + 4 < minInterval)
+		return false;
+	s_lastUpdateTick = currentTick;
+	return true;
+}
+
 void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uint32 colorBufferWidth, uint32 colorBufferHeight, uint32 colorBufferSliceIndex, uint32 colorBufferFormat, uint32 colorBufferPitch, Latte::E_HWTILEMODE colorBufferTilemode, uint32 colorBufferSwizzle, uint32 renderTarget)
 {
 	cemu_assert_debug(colorBufferSliceIndex == 0); // todo - support for non-zero slice
@@ -1046,7 +1079,7 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 
 	bool showDRC = swkbd::hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 
-	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
+	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive() && LatteRenderTarget_ShouldUpdatePadWindow())
 		LatteRenderTarget_copyToBackbuffer(texView, true);
 	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
 		LatteRenderTarget_copyToBackbuffer(texView, false);

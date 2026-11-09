@@ -1,6 +1,7 @@
 #include "AndroidFilesystemCallbacks.h"
 #include "AndroidInputHelpers.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
@@ -216,6 +217,12 @@ namespace NativeEmulation
 		jobject m_surfaceTexture = nullptr;
 	};
 } // namespace NativeEmulation
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeEmulation_setPadUpdatePolicy([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint mode, jboolean padIsMainScreen)
+{
+	LatteRenderTarget_SetPadUpdatePolicy(static_cast<LattePadUpdateMode>(mode), padIsMainScreen);
+}
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeEmulation_setReplaceTVWithPadView([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean swapped)
