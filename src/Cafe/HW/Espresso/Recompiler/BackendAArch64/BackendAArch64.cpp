@@ -15,6 +15,10 @@
 #include "HW/Espresso/Interpreter/PPCInterpreterHelper.h"
 #include "HW/Espresso/PPCState.h"
 
+#if BOOST_OS_LINUX
+#include <sys/mman.h>
+#endif
+
 using namespace Xbyak_aarch64;
 
 // remainingCycles of the current PPCInterpreter_t is kept in this register while recompiled code runs
@@ -63,6 +67,56 @@ static const GPReg LR{TEMP_GPR_2_ID};
 static const FPReg TEMP_FPR{TEMP_FPR_ID};
 
 static const util::Cpu s_cpu;
+
+// Recompiled functions are copied into large blocks of executable memory. Allocated one by one, every function
+// started on a page of its own, so calls between functions kept missing the instruction TLB and cache.
+class RecompiledCodeArena
+{
+	static constexpr size_t BLOCK_SIZE = 4 * 1024 * 1024;
+	static constexpr size_t FUNCTION_ALIGNMENT = 64; // cache line
+
+  public:
+	// returns nullptr if no memory that is both writable and executable can be mapped
+	void* Store(const void* code, size_t size)
+	{
+#if BOOST_OS_LINUX
+		std::unique_lock lock(m_mutex);
+		if (m_unavailable)
+			return nullptr;
+		const size_t alignedSize = (size + FUNCTION_ALIGNMENT - 1) & ~(FUNCTION_ALIGNMENT - 1);
+		if (!m_block || m_blockUsed + alignedSize > m_blockSize)
+		{
+			const size_t blockSize = std::max(BLOCK_SIZE, alignedSize);
+			void* block = mmap(nullptr, blockSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (block == MAP_FAILED)
+			{
+				cemuLog_log(LogType::Force, "Recompiler: Can't map executable memory for packed code, falling back to separate allocations");
+				m_unavailable = true;
+				return nullptr;
+			}
+			m_block = static_cast<uint8*>(block);
+			m_blockUsed = 0;
+			m_blockSize = blockSize;
+		}
+		uint8* dst = m_block + m_blockUsed;
+		m_blockUsed += alignedSize;
+		memcpy(dst, code, size);
+		__builtin___clear_cache(reinterpret_cast<char*>(dst), reinterpret_cast<char*>(dst + size));
+		return dst;
+#else
+		return nullptr;
+#endif
+	}
+
+  private:
+	std::mutex m_mutex;
+	uint8* m_block = nullptr;
+	size_t m_blockUsed = 0;
+	size_t m_blockSize = 0;
+	bool m_unavailable = false;
+};
+
+static RecompiledCodeArena s_recompiledCodeArena;
 
 class AArch64Allocator : public Allocator
 {
@@ -1737,6 +1791,15 @@ static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFun
 		return false;
 	}
 	aarch64GenContext.setSize(codeSize);
+
+	// branches within the function are PC-relative, so the code can be moved
+	aarch64GenContext.ready(CodeArray::PROTECT_RW);
+	if (void* code = s_recompiledCodeArena.Store(aarch64GenContext.getCode(), codeSize))
+	{
+		PPCRecFunction->x86Code = code;
+		PPCRecFunction->x86Size = codeSize;
+		return true;
+	}
 
 	aarch64GenContext.readyRE();
 
