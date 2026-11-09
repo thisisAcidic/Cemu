@@ -1,6 +1,6 @@
 """Measurement runs for LCU on the Thor: configure, run a scene, summarize frame times and thermals.
 
-  measure.py <run name> --scene harbor|intro --driver turnip|stock --patch on|off --cpu multi|single [--idle S] [--perf S]
+  measure.py <run name> --scene harbor|intro --driver stock|turnip|<dir in customDrivers> --patch on|off --cpu multi|single [--idle S] [--perf S]
 
 Results go to CEMU-gamedata/runs/<run name>/ (summary.json plus raw logs).
 """
@@ -18,7 +18,8 @@ import lcu_repro as r
 
 ROOT = '/Users/acidic/Documents/git/CEMU-gamedata/runs'
 TOOLS = os.path.dirname(os.path.abspath(__file__))
-TURNIP = '/storage/emulated/0/Android/data/info.cemu.cemu.profile/files/customDrivers/fe1e2b85-a742-46d9-8884-23abd7ea946f'
+DRIVERS = '/storage/emulated/0/Android/data/info.cemu.cemu.profile/files/customDrivers'
+TURNIP = 'fe1e2b85-a742-46d9-8884-23abd7ea946f'
 PACK = 'graphicPacks/LEGOCityUndercover_60fps/rules.txt'
 PROFILE = 'gameProfiles/0005000010101b00.ini'
 SCENE_WINDOW_S = {'harbor': 70, 'intro': 60}
@@ -31,7 +32,11 @@ def configure(out, driver, patch, cpu):
     s = open(local, encoding='utf-8').read()
     start = s.index('<custom_driver_path>') + len('<custom_driver_path>')
     end = s.index('</custom_driver_path>')
-    s = s[:start] + (TURNIP if driver == 'turnip' else '') + s[end:]
+    if driver == 'stock':
+        path = ''
+    else:
+        path = f'{DRIVERS}/{TURNIP if driver == "turnip" else driver}'
+    s = s[:start] + path + s[end:]
     enabled = f'<Entry filename="{PACK}"/>'
     disabled = f'<Entry filename="{PACK}" disabled="true"/>'
     s = s.replace(enabled, disabled) if patch == 'off' else s.replace(disabled, enabled)
@@ -72,7 +77,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('name')
     ap.add_argument('--scene', choices=['harbor', 'intro'], required=True)
-    ap.add_argument('--driver', choices=['turnip', 'stock'], default='turnip')
+    ap.add_argument('--driver', default='turnip', help='stock, turnip or the name of a directory in customDrivers')
     ap.add_argument('--patch', choices=['on', 'off'], default='on')
     ap.add_argument('--cpu', choices=['multi', 'single'], default='multi')
     ap.add_argument('--idle', type=int, help='harbor: stand still this long instead of sweeping')
