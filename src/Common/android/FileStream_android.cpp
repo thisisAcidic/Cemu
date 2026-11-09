@@ -281,10 +281,12 @@ void FileStreamAndroid::writeU8(uint8 v)
 // writing (strings)
 void FileStreamAndroid::writeStringFmt(const char* format, ...)
 {
+	char buffer[2048];
 	va_list arg_list;
 	va_start(arg_list, format);
-	m_impl->writeStringFmt(format, arg_list);
+	vsnprintf(buffer, sizeof(buffer), format, arg_list);
 	va_end(arg_list);
+	m_impl->writeString(buffer);
 }
 
 void FileStreamAndroid::writeString(const char* str)
