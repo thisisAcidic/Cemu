@@ -199,8 +199,6 @@ void nnNfpExport_SetActivateEvent(PPCInterpreter_t* hCPU)
 	ppcDefineParamStructPtr(osEvent, coreinit::OSEvent, 0);
 	ppcDefineParamMPTR(osEventMPTR, 0);
 
-	debug_printf("nn_nfp.SetActivateEvent(0x%08x)\n", osEventMPTR);
-
 	coreinit::OSInitEvent(osEvent, coreinit::OSEvent::EVENT_STATE::STATE_NOT_SIGNALED, coreinit::OSEvent::EVENT_MODE::MODE_AUTO);
 
 	nnNfpLock();
@@ -228,7 +226,6 @@ void nnNfpExport_SetDeactivateEvent(PPCInterpreter_t* hCPU)
 
 void nnNfpExport_Initialize(PPCInterpreter_t* hCPU)
 {
-	debug_printf("Nfp Initialize()\n");
 	nfp_data.nfpIsInitialized = true;
 	nfp_data.isDetecting = false;
 	nfp_data.hasActiveAmiibo = false;
@@ -893,7 +890,10 @@ void nnNfp_update()
 		return;
 	// make sure amiibo is still touching after acquiring lock
 	if (nfp_data.hasActiveAmiibo == false)
+	{
+		nnNfpUnlock();
 		return;
+	}
 	uint32 amiiboElapsedTouchTime = GetTickCount() - nfp_data.amiiboTouchTime;
 	if (amiiboElapsedTouchTime >= 1500)
 	{
@@ -915,7 +915,7 @@ void nnNfpExport_GetNfpState(PPCInterpreter_t* hCPU)
 	uint64 titleId = CafeSystem::GetForegroundTitleId();
 	if (titleId == 0x0005000010162d00 || titleId == 0x0005000010162e00)
 	{
-		coreinit::OSSleepTicks(ESPRESSO_CORE_CLOCK / 100); // pause for 10ms
+		coreinit::OSSleepTicks(ESPRESSO_TIMER_CLOCK / 100); // pause for 10ms
 	}
 
 	uint32 nfpState;
@@ -980,10 +980,9 @@ namespace nn::nfp
 		memcpy(callbackParam->uid, nfp_data.amiiboProcessedData.uid, nfp_data.amiiboProcessedData.uidLength);
 		callbackParam->uidLength = (uint8)nfp_data.amiiboProcessedData.uidLength;
 
-		PPCCoreCallback(functionPtr, index, 0, _callbackParam.GetPointer(), userParam);
-
 		nnNfpUnlock();
 
+		PPCCoreCallback(functionPtr, index, 0, _callbackParam.GetPointer(), userParam);
 
 		return 0; // 0 -> success
 	}
@@ -1050,6 +1049,9 @@ namespace nn::nfp
 
 		void RPLMapped() override
 		{
+			nnNfpLock();
+			nfp_data = {};
+			nnNfpUnlock();
 			nnNfp_load(); // legacy interface, update these to use cafeExportRegister / cafeExportRegisterFunc
 
 			cafeExportRegisterFunc(nn::nfp::GetErrorCode, "nn_nfp", "GetErrorCode__Q2_2nn3nfpFRCQ2_2nn6Result", LogType::NN_NFP);

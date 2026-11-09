@@ -209,19 +209,27 @@ void LatteCP_skipWords(uint32 wordsToSkip)
 
 LatteCMDPtr LatteCP_itSurfaceSync(LatteCMDPtr cmd)
 {
-	uint32 invalidationFlags = LatteReadCMD();
+	Latte::E_COHER_CNTL invalidationFlags = static_cast<Latte::E_COHER_CNTL>(LatteReadCMD());
 	uint32 size = LatteReadCMD() << 8;
 	MPTR addressPhys = LatteReadCMD() << 8;
 	uint32 pollInterval = LatteReadCMD();
 
+	// let the renderer know about colorbuffer invalidation
+	if (static_cast<uint32>(invalidationFlags & (Latte::E_COHER_CNTL::CB_ACTION_ENA | Latte::E_COHER_CNTL::CB_ALL_DEST_BASE_ENA)) != 0)
+		g_renderer->SurfaceSync(invalidationFlags, addressPhys, size);
+
 	if (addressPhys == MPTR_NULL || size == 0xFFFFFFFF)
 		return cmd; // block global invalidations because they are too expensive
 
-	if (invalidationFlags & 0x800000)
+	// uniform invalidation needs both TC_ACTION_ENA and SH_ACTION_ENA?
+	if (HAS_FLAG(invalidationFlags, Latte::E_COHER_CNTL::TC_ACTION_ENA))
 	{
 		// invalidate uniform or attribute buffer
 		LatteBufferCache_invalidate(addressPhys, size);
 	}
+	// texture invalidation
+	if (HAS_FLAG(invalidationFlags, Latte::E_COHER_CNTL::TC_ACTION_ENA))
+		LatteTexture_Invalidate(addressPhys, size);
 	return cmd;
 }
 
@@ -735,7 +743,8 @@ LatteCMDPtr LatteCP_itDrawIndexAuto(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 	uint32 ukn = LatteReadCMD();
 	LatteGPUState.currentDrawCallTick = GetTickCount();
 	// todo - better way to identify compute drawcalls
-	if ((LatteGPUState.contextRegister[mmSQ_CONFIG] >> 24) == 0xE4)
+	auto& sqConfig = LatteGPUState.contextNew.SQ_CONFIG;
+	if (sqConfig.get_PS_PRIO() == 0 && sqConfig.get_VS_PRIO() == 1 && sqConfig.get_GS_PRIO() == 2 && sqConfig.get_ES_PRIO() == 3)
 	{
 		uint32 vsProgramCode = ((LatteGPUState.contextRegister[mmSQ_PGM_START_ES] & 0xFFFFFF) << 8);
 		uint32 vsProgramSize = LatteGPUState.contextRegister[mmSQ_PGM_START_ES + 1] << 3;
@@ -752,20 +761,21 @@ MPTR _tempIndexArrayMPTR = MPTR_NULL;
 
 LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassContext& drawPassCtx)
 {
+	cemu_assert(nWords >= 2);
 	uint32 count = LatteReadCMD();
 	uint32 ukn1 = LatteReadCMD();
 	// reserve array for index data	
 	if (_tempIndexArrayMPTR == MPTR_NULL)
 		_tempIndexArrayMPTR = coreinit_allocFromSysArea(0x4000 * sizeof(uint32), 0x4);
-
 	LatteGPUState.currentDrawCallTick = GetTickCount();
 	// calculate size of index data in packet and read indices
 	uint32 numIndexU32s;
 	auto indexType = LatteGPUState.contextNew.VGT_DMA_INDEX_TYPE.get_INDEX_TYPE();
-	if (indexType == Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE::U16_BE)
+	if (indexType == Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE::U16_BE || indexType == Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE::U16_LE)
 	{
 		// 16bit indices
 		numIndexU32s = (count + 1) / 2;
+		cemu_assert(count < 0x4000*2-1 && numIndexU32s <= nWords-2);
 		memcpy(memory_getPointerFromVirtualOffset(_tempIndexArrayMPTR), cmd, numIndexU32s * sizeof(uint32));
 		LatteSkipCMD(numIndexU32s);
 		// swap pairs
@@ -776,11 +786,11 @@ LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 		}
 		LatteIndices_invalidate(memory_getPointerFromVirtualOffset(_tempIndexArrayMPTR), numIndexU32s * sizeof(uint32));
 	}
-	else if (indexType == Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE::U32_BE)
+	else if (indexType == Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE::U32_BE || indexType == Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE::U32_LE)
 	{
 		// 32bit indices
-		cemu_assert_debug(false); // testing needed
 		numIndexU32s = count;
+		cemu_assert(numIndexU32s < 0x4000 && numIndexU32s <= nWords-2);
 		memcpy(memory_getPointerFromVirtualOffset(_tempIndexArrayMPTR), cmd, numIndexU32s * sizeof(uint32));
 		LatteSkipCMD(numIndexU32s);
 		LatteIndices_invalidate(memory_getPointerFromVirtualOffset(_tempIndexArrayMPTR), numIndexU32s * sizeof(uint32));
@@ -790,8 +800,6 @@ LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 		cemuLog_log(LogType::Force, "itDrawImmediate - Unsupported index type");
 		return cmd;
 	}
-	cemu_assert_debug(nWords == (2 + numIndexU32s)); // verify packet size
-
 	drawPassCtx.executeDraw(count, false, _tempIndexArrayMPTR);
 	return cmd;
 }
@@ -1191,6 +1199,7 @@ void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 				switch (itCode)
 				{
 				case IT_SET_CONTEXT_REG:
+				case IT_SET_ALL_CONTEXTS:
 				{
 					LatteCP_itSetRegistersGeneric<LATTE_REG_BASE_CONTEXT>(cmdData, nWords);
 				}
@@ -1476,6 +1485,7 @@ void LatteCP_ProcessRingbuffer()
 			}
 			break;
 			case IT_SET_CONTEXT_REG:
+			case IT_SET_ALL_CONTEXTS:
 			{
 				LatteCP_itSetRegistersGeneric<LATTE_REG_BASE_CONTEXT>(cmd, nWords);
 				timerRecheck += CP_TIMER_RECHECK / 512;

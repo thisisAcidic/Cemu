@@ -7,6 +7,7 @@
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "Cafe/CafeSystem.h"
 #include "Cafe/HW/Latte/Core/LattePM4.h"
+#include "input/InputManager.h"
 
 #include "GX2_Command.h"
 #include "GX2_State.h"
@@ -264,7 +265,14 @@ void gx2Export_GX2SetDRCConnectCallback(PPCInterpreter_t* hCPU)
 	ppcDefineParamMEMPTR(callback, void, 1);
 	cemuLog_log(LogType::GX2, "GX2SetDRCConnectCallback({}, 0x{:08x})", channel, callback.GetMPTR());
 	if(callback.GetPtr())
-		PPCCoreCallback(callback, channel, TRUE);
+	{
+		// force channel 0 to always be present (like VPADRead) but the second GamePad must actually be configured
+		// note - Just Dance 2018 refuses input if we trigger the callback for second GamePad here
+		bool connected = InputManager::instance().get_vpad_controller(channel) != nullptr;
+		if (channel == 0)
+			connected = true;
+		PPCCoreCallback(callback, channel, connected ? 1 : 0);
+	}
 	osLib_returnFromFunction(hCPU, 0);
 }
 
@@ -303,8 +311,12 @@ void gx2Export_GX2SetSemaphore(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, 0);
 }
 
+extern MPTR gx2CurrentContextStateMPTR;
+
 namespace GX2
 {
+	constinit COSStaticData s_gx2StaticData;
+
 	class : public COSModule
 	{
 		public:
@@ -318,8 +330,17 @@ namespace GX2
 			return "gx2";
 		}
 
+		void RPLUnmapped() override
+		{
+			s_gx2StaticData.Deallocate();
+		}
+
 		void RPLMapped() override
 		{
+			gx2CurrentContextStateMPTR = MPTR_NULL;
+			lastSwapTime = 0;
+			GX2ResetTilingAperture();
+			s_gx2StaticData.Allocate();
 			osLib_addFunction("gx2", "GX2GetContextStateDisplayList", gx2Export_GX2GetContextStateDisplayList);
 
 			// swap, vsync & timing
@@ -334,11 +355,11 @@ namespace GX2
 			osLib_addFunction("gx2", "GX2SetGeometryShader", gx2Export_GX2SetGeometryShader);
 			osLib_addFunction("gx2", "GX2SetComputeShader", gx2Export_GX2SetComputeShader);
 			osLib_addFunction("gx2", "GX2SetVertexUniformBlock", gx2Export_GX2SetVertexUniformBlock);
-			osLib_addFunction("gx2", "GX2RSetVertexUniformBlock", gx2Export_GX2RSetVertexUniformBlock);
-
 			osLib_addFunction("gx2", "GX2SetPixelUniformBlock", gx2Export_GX2SetPixelUniformBlock);
 			osLib_addFunction("gx2", "GX2SetGeometryUniformBlock", gx2Export_GX2SetGeometryUniformBlock);
-			osLib_addFunction("gx2", "GX2SetShaderModeEx", gx2Export_GX2SetShaderModeEx);
+
+			osLib_addFunction("gx2", "GX2RSetVertexUniformBlock", gx2Export_GX2RSetVertexUniformBlock);
+			osLib_addFunction("gx2", "GX2RSetPixelUniformBlock", gx2Export_GX2RSetPixelUniformBlock);
 
 			osLib_addFunction("gx2", "GX2CalcGeometryShaderInputRingBufferSize", gx2Export_GX2CalcGeometryShaderInputRingBufferSize);
 			osLib_addFunction("gx2", "GX2CalcGeometryShaderOutputRingBufferSize", gx2Export_GX2CalcGeometryShaderOutputRingBufferSize);

@@ -1,6 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
 #include "WindowSystem.h"
-#include "Cafe/OS/libs/gx2/GX2.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
@@ -19,6 +18,7 @@
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/GameInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
+#include "Cafe/OS/libs/coreinit/coreinit_IPC.h"
 #include "Cafe/OS/libs/snd_core/ax.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
@@ -27,6 +27,7 @@
 #include "GamePatch.h"
 #include "HW/Espresso/Debugger/GDBStub.h"
 
+#include "Common/CafeStaticVar.h"
 #include "Cafe/IOSU/legacy/iosu_ioctl.h"
 #include "Cafe/IOSU/legacy/iosu_act.h"
 #include "Cafe/IOSU/legacy/iosu_fpd.h"
@@ -194,7 +195,6 @@ void LoadMainExecutable()
 		currentBaseApplicationHash = generateHashFromRawRPXData(baseRpxData, baseRpxSize);
 	}
 	free(baseRpxData);
-	debug_printf("RPXHash: 0x%08x\n", currentBaseApplicationHash);
 }
 
 fs::path getTitleSavePath()
@@ -563,8 +563,9 @@ namespace CafeSystem
 			platform = "Linux (AppImage)";
 		else if (getenv ("SNAP"))
 			platform = "Linux (Snap)";
-		else if (platform = getenv ("container"))
+		else if (getenv ("container"))
 		{
+			platform = getenv ("container");
 			if (strcmp (platform, "flatpak") == 0)
 				platform = "Linux (Flatpak)";
 		}
@@ -634,9 +635,6 @@ namespace CafeSystem
 		cemuLog_log(LogType::Force, "Used CPU extensions: {}", g_CPUFeatures.GetCommaSeparatedExtensionList());
 		// misc systems
 		rplSymbolStorage_init();
-		// allocate memory for all SysAllocators
-		// must happen before COS module init, but also before iosu::kernel::Initialize()
-		SysAllocatorContainer::GetInstance().Initialize();
 		// init IOSU modules
 		for(auto& module : s_iosuModules)
 			module->SystemLaunch();
@@ -674,6 +672,7 @@ namespace CafeSystem
 		// shutdown IOSU modules
 		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
 			(*it)->SystemExit();
+		cemu_assert_debug(!IOSUStaticData::HasAnyAllocations()); // check for leak
         s_initialized = false;
     }
 
@@ -1102,6 +1101,7 @@ namespace CafeSystem
 			return;
 		coreinit::OSSchedulerEnd();
 		Latte_Stop();
+		coreinit::IPCCloseAllHandles();
 		// reset Cafe OS userspace modules
 		snd_core::reset();
 		coreinit::OSAlarm_Shutdown();
@@ -1232,4 +1232,45 @@ namespace CafeSystem
 		return s_foregroundReturnStatus;
 	}
 
+
+	void DumpCurrentRPX()
+	{
+		if (!IsTitleRunning() || _pathToExecutable.empty())
+			return;
+		const fs::path dumpDirectory = ActiveSettings::GetUserDataPath("dump/rpx/{:016x}", GetForegroundTitleId());
+		std::error_code ec;
+		fs::create_directories(dumpDirectory, ec);
+		if (ec)
+		{
+			cemuLog_log(LogType::Force, "Failed to create RPX dump directory \"{}\": {}", _pathToUtf8(dumpDirectory), ec.message());
+			return;
+		}
+		auto dumpFile = [&dumpDirectory](const std::string& sourcePath)
+		{
+			auto fileData = fsc_extractFile(sourcePath.c_str());
+			if (!fileData)
+				return;
+			FileStream* fs = FileStream::createFile2(dumpDirectory / _utf8ToPath(sourcePath).filename());
+			if (!fs)
+				return;
+			fs->writeData(fileData->data(), (sint32)fileData->size());
+			delete fs;
+		};
+		// dump RPX
+		dumpFile(_pathToExecutable);
+		// dump RPLs
+		const std::string codeDirectory = _pathToExecutable.substr(0, _pathToExecutable.find_last_of('/') + 1);
+		sint32 fscStatus;
+		FSCVirtualFile* dirIterator = fsc_openDirIterator(codeDirectory.c_str(), &fscStatus);
+		if (dirIterator)
+		{
+			FSCDirEntry dirEntry;
+			while (fsc_nextDir(dirIterator, &dirEntry))
+			{
+				if (dirEntry.isFile && boost::iends_with(dirEntry.path, ".rpl"))
+					dumpFile(codeDirectory + dirEntry.path);
+			}
+			fsc_close(dirIterator);
+		}
+	}
 }

@@ -5,7 +5,7 @@
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Cemu/ExpressionParser/ExpressionParser.h"
 
-#include "Cafe/OS/libs/coreinit/coreinit.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "OS/RPL/rpl.h"
 #include "util/helpers/helpers.h"
 
@@ -747,10 +747,9 @@ void debugger_enterTW(PPCInterpreter_t* hCPU, bool isSingleStep)
 
 void debugger_addParserSymbols(class ExpressionParser& ep)
 {
-	const auto moduleCount = RPLLoader_GetModuleCount();
 	const auto moduleList = RPLLoader_GetModuleList();
-	std::vector<double> moduleTmp(moduleCount);
-	for (sint32 i = 0; i < moduleCount; i++)
+	std::vector<double> moduleTmp(moduleList.size());
+	for (sint32 i = 0; i < moduleList.size(); i++)
 	{
 		const auto module = moduleList[i];
 		if (module)
@@ -793,3 +792,4 @@ bool debugger_getOptionLogOnlyMemoryBreakpoints()
 {
 	return s_debuggerState.logOnlyMemoryBreakpoints;
 }
+
