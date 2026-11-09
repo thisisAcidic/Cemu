@@ -81,6 +81,7 @@ struct SwapchainInfoVk
 	uint64 m_presentId = 1;
 	uint64 m_queueDepth = 0; // number of frames with pending presentation requests
 	uint64 m_maxQueued = 0; // the maximum number of frames with presentation requests.
+	size_t m_commandBufferIDOfPrevFrame = 0; // command buffer submitted together with the previous present
 
 
 	// swapchain image ringbuffer (indexed by swapchainImageIndex)
