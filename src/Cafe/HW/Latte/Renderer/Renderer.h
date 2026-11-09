@@ -74,6 +74,10 @@ public:
 
 	virtual void HandleScreenshotRequest(LatteTextureView* texView, bool padView){}
 
+	// renderers that can tell whether the GamePad image changed call LatteRenderTarget_NotifyPadImageChanged() when it does
+	virtual bool SupportsPadImageChangeTracking() const { return false; }
+	virtual void TrackPadImageChanges(LatteTextureView* texView) {}
+
 	virtual void DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter,
 												sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 												bool padView, bool clearBackground) = 0;

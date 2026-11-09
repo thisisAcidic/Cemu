@@ -55,6 +55,7 @@ object NativeEmulation {
         const val FULL: Int = 0
         const val AUTOMATIC: Int = 1
         const val LOW: Int = 2
+        const val STATIC: Int = 3
     }
 
     @JvmStatic

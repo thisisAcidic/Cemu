@@ -98,9 +98,10 @@ fun GeneralSettingsScreen(
 }
 
 private fun gamePadFrameRateToString(frameRate: GamePadFrameRate) = when (frameRate) {
-    GamePadFrameRate.FULL -> tr("Full")
-    GamePadFrameRate.AUTOMATIC -> tr("Automatic (30 FPS, full while touched)")
-    GamePadFrameRate.LOW -> tr("Low (10 FPS, full while touched)")
+    GamePadFrameRate.FULL -> tr("Always full")
+    GamePadFrameRate.STATIC -> tr("Full, paused while the image doesn't change")
+    GamePadFrameRate.AUTOMATIC -> tr("Automatic (30 FPS, paused while the image doesn't change)")
+    GamePadFrameRate.LOW -> tr("Low (10 FPS, paused while the image doesn't change)")
 }
 
 private fun externalDisplayPadScreenToString(screen: ExternalDisplayPadScreen) = when (screen) {

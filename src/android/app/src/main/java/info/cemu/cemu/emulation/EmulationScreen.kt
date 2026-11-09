@@ -653,6 +653,7 @@ private fun EmulationErrorDialog(error: NativeError, onQuit: () -> Unit) {
 
 private fun GamePadFrameRate.toPadUpdateMode() = when (this) {
     GamePadFrameRate.FULL -> NativeEmulation.PadUpdateMode.FULL
+    GamePadFrameRate.STATIC -> NativeEmulation.PadUpdateMode.STATIC
     GamePadFrameRate.AUTOMATIC -> NativeEmulation.PadUpdateMode.AUTOMATIC
     GamePadFrameRate.LOW -> NativeEmulation.PadUpdateMode.LOW
 }
