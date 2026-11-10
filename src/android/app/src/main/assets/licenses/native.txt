@@ -1,8 +1,8 @@
 Cidemu is licensed under the Mozilla Public License 2.0 like Cemu. It contains the following native libraries.
 
-================================================================================
+========================================
 boost
-================================================================================
+========================================
 
 Boost Software License - Version 1.0 - August 17th, 2003
 
@@ -28,9 +28,9 @@ FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
-================================================================================
+========================================
 bzip2
-================================================================================
+========================================
 
 --------------------------------------------------------------------------
 
@@ -74,9 +74,9 @@ bzip2/libbzip2 version 1.0.8 of 13 July 2019
 
 --------------------------------------------------------------------------
 
-================================================================================
+========================================
 cubeb
-================================================================================
+========================================
 
 Copyright © 2011 Mozilla Foundation
 
@@ -92,9 +92,9 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-================================================================================
+========================================
 curl
-================================================================================
+========================================
 
 COPYING:
 
@@ -186,9 +186,9 @@ inet_ntop.c and inet_pton.c Notice:
  * Original code by Paul Vixie. "curlified" by Gisle Vanem.
  */
 
-================================================================================
+========================================
 Dear ImGui
-================================================================================
+========================================
 
 The MIT License (MIT)
 
@@ -212,9 +212,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-================================================================================
+========================================
 fmt
-================================================================================
+========================================
 
 Copyright (c) 2012 - present, Victor Zverovich and {fmt} contributors
 
@@ -244,15 +244,15 @@ of this Software are embedded into a machine-executable object form of such
 source code, you may redistribute such embedded portions in such object form
 without including the above copyright and permission notices.
 
-================================================================================
+========================================
 Font Awesome
-================================================================================
+========================================
 
 Font Awesome Free by Fonticons, Inc. The font is licensed under the SIL Open Font License 1.1, the icons under CC BY 4.0. https://fontawesome.com/license/free
 
-================================================================================
+========================================
 glm
-================================================================================
+========================================
 
 ================================================================================
 OpenGL Mathematics (GLM)
@@ -309,9 +309,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-================================================================================
+========================================
 glslang
-================================================================================
+========================================
 
 Here, glslang proper means core GLSL parsing, HLSL parsing, and SPIR-V code
 generation. Glslang proper requires use of a number of licenses, one that covers
@@ -1330,9 +1330,9 @@ NVIDIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ** IN THE MATERIALS.
 */
 
-================================================================================
+========================================
 ih264d
-================================================================================
+========================================
 
 /******************************************************************************
  *
@@ -1355,9 +1355,9 @@ ih264d
 */
 /*****************************************************************************/
 
-================================================================================
+========================================
 libadrenotools
-================================================================================
+========================================
 
 BSD 2-Clause License
 
@@ -1384,9 +1384,9 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-================================================================================
+========================================
 libbacktrace
-================================================================================
+========================================
 
 # Copyright (C) 2012-2016 Free Software Foundation, Inc.
 
@@ -1418,9 +1418,9 @@ libbacktrace
 # IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-================================================================================
+========================================
 libjpeg-turbo
-================================================================================
+========================================
 
 libjpeg-turbo Licenses
 ======================
@@ -1558,9 +1558,9 @@ attribution and endorsement protections to other entities.  Thus, it was
 desirable to choose a license that granted us the same protections for new code
 that were granted to the IJG for code derived from their software.
 
-================================================================================
+========================================
 liblzma
-================================================================================
+========================================
 
 XZ Utils Licensing
 ==================
@@ -1631,9 +1631,9 @@ XZ Utils Licensing
     If you have questions, don't hesitate to ask for more information.
     The contact information is in the README file.
 
-================================================================================
+========================================
 libpng
-================================================================================
+========================================
 
 COPYRIGHT NOTICE, DISCLAIMER, and LICENSE
 =========================================
@@ -1770,9 +1770,9 @@ to supporting the PNG file format in commercial products.  If you use
 this source code in a product, acknowledgment is not required but would
 be appreciated.
 
-================================================================================
+========================================
 libusb
-================================================================================
+========================================
 
 GNU LESSER GENERAL PUBLIC LICENSE
 		       Version 2.1, February 1999
@@ -2277,9 +2277,9 @@ necessary.  Here is a sample; alter the names:
 
 That's all there is to it!
 
-================================================================================
+========================================
 libzip
-================================================================================
+========================================
 
 Copyright (C) 1999-2020 Dieter Baron and Thomas Klausner
 
@@ -2313,15 +2313,15 @@ IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
 OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-================================================================================
+========================================
 Noto Sans
-================================================================================
+========================================
 
 The shared fonts in resources/sharedFonts are based on Noto Sans and licensed under the SIL Open Font License 1.1. https://openfontlicense.org
 
-================================================================================
+========================================
 openssl
-================================================================================
+========================================
 
 Apache License
                            Version 2.0, January 2004
@@ -2500,9 +2500,9 @@ Apache License
 
    END OF TERMS AND CONDITIONS
 
-================================================================================
+========================================
 pugixml
-================================================================================
+========================================
 
 MIT License
 
@@ -2529,9 +2529,9 @@ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
-================================================================================
+========================================
 rapidjson
-================================================================================
+========================================
 
 Tencent is pleased to support the open source community by making RapidJSON available. 
  
@@ -2591,15 +2591,15 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-================================================================================
+========================================
 stb_image
-================================================================================
+========================================
 
 stb_image is available under the MIT license or in the public domain (unlicense), see dependencies/stb/include/stb_image.h.
 
-================================================================================
+========================================
 tiff
-================================================================================
+========================================
 
 # LibTIFF license
 
@@ -2625,9 +2625,9 @@ WHETHER OR NOT ADVISED OF THE POSSIBILITY OF DAMAGE, AND ON ANY THEORY OF
 LIABILITY, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE 
 OF THIS SOFTWARE.
 
-================================================================================
+========================================
 Vulkan-Headers
-================================================================================
+========================================
 
 Copyright 2015-2023 The Khronos Group Inc.
 
@@ -2648,9 +2648,9 @@ Full license text of these licenses is available at:
   * Apache-2.0: https://opensource.org/licenses/Apache-2.0
   * MIT: https://opensource.org/licenses/MIT
 
-================================================================================
+========================================
 xbyak_aarch64
-================================================================================
+========================================
 
 Apache License
                            Version 2.0, January 2004
@@ -2829,9 +2829,9 @@ Apache License
 
    END OF TERMS AND CONDITIONS
 
-================================================================================
+========================================
 ZArchive
-================================================================================
+========================================
 
 MIT No Attribution
 
@@ -2850,9 +2850,9 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-================================================================================
+========================================
 zlib
-================================================================================
+========================================
 
 Copyright notice:
 
@@ -2877,9 +2877,9 @@ Copyright notice:
   Jean-loup Gailly        Mark Adler
   jloup@gzip.org          madler@alumni.caltech.edu
 
-================================================================================
+========================================
 zstd
-================================================================================
+========================================
 
 ZSTD is dual licensed under BSD and GPLv2.
 

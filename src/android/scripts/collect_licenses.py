@@ -32,7 +32,7 @@ OTHER = [
                   'SIL Open Font License 1.1. https://openfontlicense.org'),
 ]
 
-SEPARATOR = '=' * 80
+SEPARATOR = '=' * 40
 
 
 def read(path):
