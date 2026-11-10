@@ -2406,13 +2406,27 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 
 	// wait for previous command buffer semaphore
 	VkSemaphore prevSem = GetLastSubmittedCmdBufferSemaphore();
-	const VkPipelineStageFlags semWaitStageMask[2] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT };
-	VkSemaphore waitSemArray[2];
+	VkPipelineStageFlags semWaitStageMask[4];
+	VkSemaphore waitSemArray[4];
 	submitInfo.waitSemaphoreCount = 0;
 	if (waitSemaphore != VK_NULL_HANDLE)
+	{
+		semWaitStageMask[submitInfo.waitSemaphoreCount] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 		waitSemArray[submitInfo.waitSemaphoreCount++] = waitSemaphore;
+	}
+	// swapchain images are only written as color attachments
+	cemu_assert_debug(m_pendingAcquireSemaphores.size() <= 2);
+	for (VkSemaphore acquireSemaphore : m_pendingAcquireSemaphores)
+	{
+		semWaitStageMask[submitInfo.waitSemaphoreCount] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		waitSemArray[submitInfo.waitSemaphoreCount++] = acquireSemaphore;
+	}
+	m_pendingAcquireSemaphores.clear();
 	if (m_numSubmittedCmdBuffers > 0)
+	{
+		semWaitStageMask[submitInfo.waitSemaphoreCount] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 		waitSemArray[submitInfo.waitSemaphoreCount++] = prevSem; // wait on semaphore from previous submit
+	}
 	submitInfo.pWaitDstStageMask = semWaitStageMask;
 	submitInfo.pWaitSemaphores = waitSemArray;
 
@@ -3203,7 +3217,8 @@ bool VulkanRenderer::AcquireNextSwapchainImage(bool mainWindow)
 	if (!result)
 		return false;
 
-	SubmitCommandBuffer(VK_NULL_HANDLE, chainInfo.ConsumeAcquireSemaphore());
+	// the next submit waits for the image, that saves a submit for every acquired image
+	m_pendingAcquireSemaphores.emplace_back(chainInfo.ConsumeAcquireSemaphore());
 	return true;
 }
 

@@ -260,6 +260,7 @@ public:
 	void ProcessFinishedCommandBuffers();
 	void WaitForNextFinishedCommandBuffer();
 	void SubmitCommandBuffer(VkSemaphore signalSemaphore = VK_NULL_HANDLE, VkSemaphore waitSemaphore = VK_NULL_HANDLE);
+	std::vector<VkSemaphore> m_pendingAcquireSemaphores; // acquired swapchain images the next submit has to wait for
 	void RequestSubmitSoon();
 	void RequestSubmitOnIdle();
 
