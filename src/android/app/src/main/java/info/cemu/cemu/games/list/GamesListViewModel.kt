@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.stateIn
 class GamesListViewModel : ViewModel() {
     private var gamePaths = NativeSettings.getGamesPaths().toSet()
 
+    private val _hasGamePaths = MutableStateFlow(gamePaths.isNotEmpty())
+    val hasGamePaths = _hasGamePaths.asStateFlow()
+
     private val _filterText = MutableStateFlow("")
     val filterText = _filterText.asStateFlow()
     fun setFilterText(filterText: String) {
@@ -70,6 +73,7 @@ class GamesListViewModel : ViewModel() {
         val newGamePaths = NativeSettings.getGamesPaths().toSet()
         if (newGamePaths != gamePaths) {
             gamePaths = newGamePaths
+            _hasGamePaths.value = gamePaths.isNotEmpty()
             return true
         }
         return false

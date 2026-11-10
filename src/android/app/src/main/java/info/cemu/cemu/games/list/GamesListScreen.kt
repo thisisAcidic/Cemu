@@ -10,7 +10,9 @@ import android.provider.DocumentsContract
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,6 +95,7 @@ fun GamesListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val gameSearchQuery by gamesListViewModel.filterText.collectAsStateWithLifecycle()
     val games by gamesListViewModel.games.collectAsStateWithLifecycle()
+    val hasGamePaths by gamesListViewModel.hasGamePaths.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val state = rememberPullToRefreshState()
@@ -186,6 +190,13 @@ fun GamesListScreen(
                 },
             )
 
+            if (!hasGamePaths && games.isEmpty()) {
+                NoGamePathsHint(
+                    modifier = Modifier.align(Alignment.Center),
+                    goToSettings = goToSettings,
+                )
+            }
+
             PullToRefreshDefaults.Indicator(
                 modifier = Modifier.align(Alignment.TopCenter),
                 isRefreshing = refreshing,
@@ -193,6 +204,27 @@ fun GamesListScreen(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun NoGamePathsHint(modifier: Modifier, goToSettings: () -> Unit) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = tr("No games found"),
+            fontSize = 20.sp,
+        )
+        Text(
+            text = tr("Add the folder with your games in Settings > General settings > Add game path."),
+            textAlign = TextAlign.Center,
+        )
+        TextButton(onClick = goToSettings) {
+            Text(tr("Open settings"))
         }
     }
 }
