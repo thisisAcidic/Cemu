@@ -82,4 +82,4 @@ jobs:
             exit 1
           fi
           sha256sum $apk > $apk.sha256
-          gh release create "$GITHUB_REF_NAME" $apk $apk.sha256 --title "Cidemu $version" --notes-file release-notes.md
+          gh release create "$GITHUB_REF_NAME" $apk $apk.sha256 dist/frontends/NintendoWiiU-Cidemu.json --title "Cidemu $version" --notes-file release-notes.md

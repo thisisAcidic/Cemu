@@ -3,7 +3,8 @@
 ## Cidemu 0.3
 
 - The app id is now `dev.cidix.cidemu`, after the cidix.dev domain. Cidemu 0.3 installs as a new app next to 0.2, copy the data folder over once (see the README) and uninstall 0.2 afterwards.
-- The README explains how to start games in Cidemu from Cocoon, ES-DE and other frontends.
+- Cocoon: The release comes with `NintendoWiiU-Cidemu.json`, a platform file that Cocoon imports to start Wii U games in Cidemu. The README also explains ES-DE and other frontends.
+- The About screen links to the renamed repository, github.com/thisisAcidic/Cidemu.
 
 ## Cidemu 0.2
 

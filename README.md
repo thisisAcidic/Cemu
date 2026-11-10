@@ -108,10 +108,19 @@ Frontends start Cidemu directly with the game file, the same way as the Cemu And
 
 ### Cocoon
 
-Cocoon takes its emulators from its own player catalogue and updates it by itself. As soon as Cidemu's entry is in it:
+<p align="center">
+  <img src="docs/screenshots/cocoon-player.jpg" width="560" alt="Cocoon's Nintendo Wii U platform with Cidemu as default player and CEMU as the other choice">
+</p>
 
-1. For all Wii U games: *Settings > Library & Data > Platforms > Nintendo Wii U > Default Player > Cidemu*.
-2. For a single game: select the game, press *Y > Edit* and set *Player* to *Cidemu*.
+Cocoon can import platforms from a file, and Cidemu comes with one for the Wii U:
+
+1. Download [`NintendoWiiU-Cidemu.json`](https://github.com/thisisAcidic/Cidemu/releases/latest/download/NintendoWiiU-Cidemu.json) on the device.
+2. In Cocoon open *Settings > Library & data*, scroll down to the platform list and press *+* above it.
+3. At the very bottom of *Add Platforms* choose *Import Custom Platform* and pick the downloaded file.
+4. *Nintendo Wii U* now uses *Cidemu* as default player. CEMU stays available in the same list, and a single game can use another player with *Y > Edit > Player*.
+5. If Cocoon has no Wii U games yet, open *Nintendo Wii U* in the platform list, add your Wii U folder with *Add new ROMs folder* and run *Rescan Games*.
+
+Cidemu has also been proposed for Cocoon's own player catalogue. Once it is in there, Cidemu shows up under *Default player* without importing anything.
 
 ### ES-DE
 
