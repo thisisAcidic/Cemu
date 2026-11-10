@@ -1207,8 +1207,8 @@ bool s_syncOnNextDraw = false;
 
 // Games often switch between draws with one and with more color outputs into the same targets. Each switch would end the
 // render pass, and tile based GPUs then store and reload all attachments. If the running render pass already contains
-// every attachment of the requested framebuffer it is kept instead. The pipeline doesn't write color attachments the
-// pixel shader has no output for, and a framebuffer without depth attachment means depth and stencil tests are off.
+// every attachment of the requested framebuffer it is kept instead, as long as the draw can't touch the attachments that
+// aren't part of its framebuffer. The pipeline doesn't write color attachments the pixel shader has no output for.
 void VulkanRenderer::draw_keepRenderPassForSubset()
 {
 	CachedFBOVk* running = m_state.activeRenderpassFBO;
@@ -1218,12 +1218,22 @@ void VulkanRenderer::draw_keepRenderPassForSubset()
 		return;
 	if (running->GetExtend().width != requested->GetExtend().width || running->GetExtend().height != requested->GetExtend().height)
 		return;
+	LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
+	const uint32 pixelOutputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0;
+	const uint32 renderTargetMask = LatteGPUState.contextNew.CB_TARGET_MASK.get_MASK();
 	for (sint32 i = 0; i < 8; i++)
 	{
 		if (requested->colorBuffer[i].texture && requested->colorBuffer[i].texture != running->colorBuffer[i].texture)
 			return;
+		// the framebuffer drops color buffers the draw still writes to, e.g. when they are smaller than the viewport
+		// or color output is disabled
+		if (running->colorBuffer[i].texture && !requested->colorBuffer[i].texture && (pixelOutputMask & (1 << i)) != 0 && ((renderTargetMask >> (i * 4)) & 0xF) != 0)
+			return;
 	}
 	if (requested->depthBuffer.texture && requested->depthBuffer.texture != running->depthBuffer.texture)
+		return;
+	// without depth buffer the depth and stencil tests have no effect, in the running pass they would
+	if (running->depthBuffer.texture && !requested->depthBuffer.texture && (LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_Z_ENABLE() || LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_STENCIL_ENABLE()))
 		return;
 	// the draw must not sample an attachment of the running pass that isn't part of its own framebuffer
 	auto isExtraAttachment = [&](LatteTexture* texture) {
