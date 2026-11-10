@@ -126,11 +126,33 @@ MMURange mmuRange_CORE1_LC				{ 0xFFC40000, 0x00005000, MMU_MEM_AREA_ID::CPU_LC1
 MMURange mmuRange_CORE2_LC				{ 0xFFC80000, 0x00005000, MMU_MEM_AREA_ID::CPU_LC2, "CORE2_LC" }; // locked L2 cache of core 2
 MMURange mmuRange_HIGHMEM				{ 0xFFFFF000, 0x00001000, MMU_MEM_AREA_ID::CPU_PER_CORE, "PER-CORE" }; // per-core memory? Used by coreinit and PPC kernel to store core context specific data (like current thread ptr). We dont use it but Project Zero has a bug where it writes a byte at 0xfffffffe thus this memory range needs to be writable
 
+static uint8* memory_reserveGuestSpace()
+{
+	constexpr size_t GUEST_SPACE_SIZE = 0x100000000;
+#if BOOST_OS_UNIX
+	// The coreinit heaps align host pointers, which gives guest addresses with the requested alignment only if the base
+	// is aligned at least as much. mmap only guarantees the page size, so reserve twice the space and keep the 4GB
+	// aligned part. The lower 32 bits of a host address are then the guest address.
+	uint8* reservation = (uint8*)MemMapper::ReserveMemory(nullptr, GUEST_SPACE_SIZE * 2, MemMapper::PAGE_PERMISSION::P_RW);
+	if (reservation)
+	{
+		uint8* base = (uint8*)(((uintptr_t)reservation + GUEST_SPACE_SIZE - 1) & ~(uintptr_t)(GUEST_SPACE_SIZE - 1));
+		uint8* reservationEnd = reservation + GUEST_SPACE_SIZE * 2;
+		if (base != reservation)
+			MemMapper::FreeReservation(reservation, base - reservation);
+		if (base + GUEST_SPACE_SIZE != reservationEnd)
+			MemMapper::FreeReservation(base + GUEST_SPACE_SIZE, reservationEnd - (base + GUEST_SPACE_SIZE));
+		return base;
+	}
+#endif
+	return (uint8*)MemMapper::ReserveMemory(nullptr, GUEST_SPACE_SIZE, MemMapper::PAGE_PERMISSION::P_RW);
+}
+
 void memory_init()
 {
 	// reserve a continous range of 4GB
 	if(!memory_base)
-		memory_base = (uint8*)MemMapper::ReserveMemory(nullptr, (size_t)0x100000000, MemMapper::PAGE_PERMISSION::P_RW);
+		memory_base = memory_reserveGuestSpace();
 	if( !memory_base )
 	{
 		debug_printf("memory_init(): Unable to reserve 4GB of memory\n");
