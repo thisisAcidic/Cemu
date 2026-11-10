@@ -191,3 +191,26 @@ Erste Leistungsmessungen (Hafen, System-Treiber, Akku):
 
 ## Offen
 - Gast-Register an Blockgrenzen (13,5 %), Float-Umwandlungen (10 %).
+
+## Untertakt als neue Referenz (ab 10.11.)
+
+Der Nutzer spielt mit Untertakt über ClusterTune (Mittelkerne 2054 MHz, Prime 2093 MHz). Alle neuen Messungen laufen damit.
+
+| Lauf | FPS | Leistung | Kern 1 | GPU-Thread | Kern 2 | Szene |
+|---|---|---|---|---|---|---|
+| r21-uc-base (dev) | 59,9 | 7,92 W | 79 % | 81 % | 42 % | 66,8 °C |
+| r21-uc-padauto (GamePad automatisch) | 59,8 | 8,14 W | 79 % | 81 % | 42 % | 67,5 °C |
+| r21-uc-pools (Command-Pool je Puffer) | 59,9 | 8,14 W | 78 % | 80 % | 42 % | 67,1 °C |
+| r20-uc-llvm (LLVM, direkte Aufrufe) | 58,8 | 8,11 W | 89 % | 80 % | 53 % | 70,7 °C |
+| r22-uc-gpu550 (dev, GPU max 550 MHz) | 58,9 | 7,80 W | 79 % | 82 % | 42 % | 67,0 °C |
+
+- Streuung zweier gleicher Läufe rund ±0,15 W.
+- DDR steht immer auf 4224 MHz: Ein Speicher-Voter (`memlat:ddr:gold`) wird alle 10 s vom Qualcomm-Perf-HAL neu auf 4,2 GHz gesetzt, in jedem AYN-Leistungs- und Lüftermodus, auch ohne ClusterTune. Firmware-Verhalten, ohne root nicht änderbar.
+- Command-Pools: `vkResetCommandPool` kostet im Adreno-Treiber genauso viel wie `vkResetCommandBuffer` (46 % des Submit-Pfads), kein Gewinn. GamePad automatisch: In dieser Szene ändert sich die Karte ständig, die Bildänderungs-Erkennung kostet so viel wie sie spart.
+- GPU-Thread: 38 % der Emulator-CPU-Zeit. Submit-Pfad 19 % des Threads, davon die Hälfte Command-Buffer-Reset im Treiber.
+
+## Render-Passes (perf/renderpass-reuse)
+
+- Die GPU ist in der Hafenszene zu 73 % ausgelastet, meist auf 680 MHz, obwohl LCU nativ in 720p rendert. Ein GPU-Limit von 550 MHz kostet 1 FPS. Ursache: zu viele Render-Passes. Adreno lädt bei jedem Pass-Beginn Farbe und Tiefe aus dem Speicher und schreibt sie am Ende zurück.
+- Zählung pro Bild: ~960 Draw-Calls, ~120 Render-Passes. 86 Wechsel des Render-Targets, davon ~39 Teilmenge und ~33 Obermenge des laufenden Passes: Das Spiel wechselt zwischen Draw-Calls mit einem und zwei Farbausgängen, und Cemu baut das Framebuffer nur aus den Ausgängen, die der Pixel-Shader schreibt.
+- Fix: Der laufende Pass bleibt, wenn er alle Attachments des neuen Framebuffers enthält und der Draw-Call keines der übrigen als Textur liest. Farb-Attachments ohne Shader-Ausgang bekommen Schreibmaske 0. Ergebnis: **~60 statt ~120 Render-Passes pro Bild**, Flackertest sauber (895 Bilder, 0 fehlerhaft).
