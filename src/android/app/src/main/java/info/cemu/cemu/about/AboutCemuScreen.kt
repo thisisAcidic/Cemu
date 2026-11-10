@@ -50,7 +50,7 @@ fun AboutCemuScreen(navigateBack: () -> Unit) {
     val libraries by produceLibraries(R.raw.aboutlibraries)
 
     ScreenContentLazy(
-        appBarText = tr("About Cemu"),
+        appBarText = tr("About Cidemu"),
         navigateBack = navigateBack,
         contentModifier = Modifier
             .fillMaxWidth()
@@ -95,12 +95,22 @@ private fun LazyListScope.aboutCemuSection() {
             )
             Text(
                 text = tr(
-                    "Original authors: {0}",
-                    stringResource(R.string.cemu_original_authors)
+                    "Based on Cemu by {0} and the Cemu contributors, and on the Cemu Android port by {1}",
+                    stringResource(R.string.cemu_original_authors),
+                    stringResource(R.string.cemu_android_port_author),
                 ),
                 fontSize = 18.sp,
             )
-            CemuWebsite()
+            Text(
+                text = tr("Source code:"),
+                fontSize = 18.sp,
+            )
+            Link(stringResource(R.string.cidemu_source_code))
+            Text(
+                text = tr("Cemu website:"),
+                fontSize = 18.sp,
+            )
+            Link(stringResource(R.string.cemu_website))
         }
     }
 }
@@ -109,7 +119,7 @@ private fun LazyListScope.disclaimerSection() {
     item {
         AboutSection {
             Text(
-                text = tr("Cemu is a Wii U emulator.\n\nWii and Wii U are trademarks of Nintendo.\nCemu is not affiliated with Nintendo."),
+                text = tr("Cidemu is a Wii U emulator.\n\nWii and Wii U are trademarks of Nintendo.\nCidemu is not affiliated with Nintendo or the Cemu project."),
                 fontSize = 18.sp
             )
         }
@@ -177,12 +187,12 @@ private fun LazyListScope.kotlinLibrariesSection(
 }
 
 @Composable
-private fun CemuWebsite() {
+private fun Link(url: String) {
     Text(
         buildAnnotatedString {
             withLink(
                 LinkAnnotation.Url(
-                    stringResource(R.string.cemu_website),
+                    url,
                     TextLinkStyles(
                         style = SpanStyle(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -191,7 +201,7 @@ private fun CemuWebsite() {
                     )
                 )
             ) {
-                append(stringResource(R.string.cemu_website))
+                append(url)
             }
         }
     )

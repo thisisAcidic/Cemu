@@ -256,8 +256,8 @@ private fun getErrorMessage(error: NativeAccount.OnlineValidationError): String 
         is NativeAccount.CorruptedOTP -> tr("otp.bin is invalid")
         is NativeAccount.CorruptedSEEPROM -> tr("seeprom.bin is invalid")
         is NativeAccount.MissingFile -> tr("Missing certificate and key files:") + "\n${error.file}"
-        is NativeAccount.MissingOTP -> tr("otp.bin missing in Cemu directory")
-        is NativeAccount.MissingSEEPROM -> tr("seeprom.bin missing in Cemu directory")
+        is NativeAccount.MissingOTP -> tr("otp.bin missing in Cidemu directory")
+        is NativeAccount.MissingSEEPROM -> tr("seeprom.bin missing in Cidemu directory")
     }
 }
 

@@ -121,7 +121,7 @@ fun GamesListScreen(
                             if (!tryOpenCemuFolder(context)) {
                                 snackbarHostState.showMessage(
                                     coroutineScope,
-                                    tr("Failed to open Cemu folder")
+                                    tr("Failed to open Cidemu folder")
                                 )
                             }
                         },
@@ -434,7 +434,7 @@ private fun GameListToolBarActionsMenu(
         )
         DropdownMenuItem(
             onClick = openCemuFolder,
-            text = tr("Open Cemu folder")
+            text = tr("Open Cidemu folder")
         )
         DropdownMenuItem(
             onClick = shareLogFile,
@@ -442,7 +442,7 @@ private fun GameListToolBarActionsMenu(
         )
         DropdownMenuItem(
             onClick = goToAboutCemu,
-            text = tr("About Cemu"),
+            text = tr("About Cidemu"),
         )
     }
 }

@@ -38,6 +38,12 @@ fun getVersionName(): String {
     return getGitHash() ?: "1.0"
 }
 
+fun getVersionCode(): Int {
+    if (versionMajor != null && versionMinor != null)
+        return versionMajor * 1000 + versionMinor
+    return 1
+}
+
 val cemuDataFilesFolder = "../../../bin"
 
 android {
@@ -45,11 +51,11 @@ android {
     compileSdk = 36
     ndkVersion = "29.0.14206865"
     defaultConfig {
-        applicationId = "info.cemu.cemu"
+        applicationId = "com.cidix.cidemu"
         minSdk = 30
         targetSdk = 35
         versionName = getVersionName()
-        versionCode = 1
+        versionCode = getVersionCode()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -107,11 +113,6 @@ android {
                     arguments += "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
                 }
             }
-        }
-        create("fork") {
-            initWith(getByName("release"))
-            applicationIdSuffix = ".fork"
-            matchingFallbacks += listOf("release")
         }
     }
 
