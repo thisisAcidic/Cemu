@@ -438,3 +438,20 @@ Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Buil
 - Leere Spieleliste ohne Spielpfad: Hinweis mit Knopf zu den Einstellungen.
 - Controller-Abfrage: Prozess der Spieleliste 0 Ticks während des Spiels, Emulationsprozess 3 Ticks in 10 s.
 - Command-Pools ohne `TRANSIENT_BIT` (Branch `exp/pool-not-transient`, lokal): Reset-Thread 234 statt 220 Ticks in 20 s im Hafen, also kein Gewinn. Verworfen. Der Thread braucht rund 11 % eines kleinen Kerns.
+
+### Akkulauf Cidemu 0.2 gegen den Ausgangspunkt (bat1)
+
+Thor vom Strom getrennt, ClusterTune-Limits aktiv (Prime 2093, Mitte 2054, GPU 550 MHz), Cidemu 0.2 mit LCU-Profil (schnelle Multiplikation), nach einem Aufwärmlauf für den Shader-Cache. Ausgangspunkt ist `r5-base-power` (Standardtakt, ebenfalls Akkuleistung).
+
+| | Ausgangspunkt, Standardtakt | Cidemu 0.2, Limits |
+|---|---|---|
+| FPS | 55,0 | 59,9 |
+| ≤ 16,7 ms | 18,4 % | 52,5 % |
+| p99 | 23,8 ms | 18,1 ms |
+| Akkuleistung | 9,56 W | **6,07 W (−37 %)** |
+| CPU max / Szene | 95,1 / 86,1 °C | 70,1 / 61,9 °C |
+| GPU max | 71,1 °C | 57,3 °C |
+| GPU-Takt / Last | 477 MHz | 401 MHz / 40 % |
+
+- Ein Lauf. Im Akkubetrieb fällt das Rauschen durch das versteckte Nachladen weg, die Werte sind direkt mit dem Ausgangspunkt vergleichbar.
+- Ziel „unter 6 W“: 6,07 W, also knapp darüber.
