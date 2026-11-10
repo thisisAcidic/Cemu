@@ -10,54 +10,111 @@
 #include <arm_neon.h>
 #endif
 
+// Decoded index data is kept across frames. The guest can change index data whenever the GPU waits or a command buffer
+// finishes, so after that an entry is only reused if a hash of the guest data still matches
 struct
 {
+	struct CacheKey
+	{
+		const void* ptr;
+		uint32 count;
+		LattePrimitiveMode primitiveMode;
+		LatteIndexType indexType;
+
+		bool operator==(const CacheKey& other) const
+		{
+			return ptr == other.ptr && count == other.count && primitiveMode == other.primitiveMode && indexType == other.indexType;
+		}
+	};
+
+	struct CacheKeyHash
+	{
+		size_t operator()(const CacheKey& key) const
+		{
+			return std::hash<const void*>()(key.ptr) ^ ((size_t)key.count << 8) ^ ((size_t)key.primitiveMode << 40) ^ ((size_t)key.indexType << 48);
+		}
+	};
+
 	struct CacheEntry
 	{
-		// input data
-		const void* lastPtr;
-		uint32 lastCount;
-		LattePrimitiveMode lastPrimitiveMode;
-		LatteIndexType lastIndexType;
-		uint64 lastUsed;
+		uint64 dataHash;
+		uint32 validatedEpoch;
+		uint32 lastUsedFrame;
 		// output
 		uint32 indexMax;
 		Renderer::INDEX_TYPE renderIndexType;
 		uint32 outputCount;
 		Renderer::IndexAllocation indexAllocation;
 	};
-	std::array<CacheEntry, 8> entry;
-	uint64 currentUsageCounter{0};
+	std::unordered_map<CacheKey, CacheEntry, CacheKeyHash> entries;
+	uint32 epoch{1};
 }LatteIndexCache{};
+
+constexpr size_t INDEX_CACHE_MAX_ENTRIES = 2048;
 
 void LatteIndices_invalidate(const void* memPtr, uint32 size)
 {
-	for(auto& entry : LatteIndexCache.entry)
+	for (auto it = LatteIndexCache.entries.begin(); it != LatteIndexCache.entries.end();)
 	{
-		if (entry.lastPtr >= memPtr && (entry.lastPtr < ((uint8*)memPtr + size)) )
+		if (it->first.ptr >= memPtr && it->first.ptr < ((uint8*)memPtr + size))
 		{
-			if(entry.lastPtr != nullptr)
-				g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
-			entry.lastPtr = nullptr;
-			entry.lastCount = 0;
+			g_renderer->indexData_releaseIndexMemory(it->second.indexAllocation);
+			it = LatteIndexCache.entries.erase(it);
 		}
+		else
+			++it;
 	}
 }
 
 void LatteIndices_invalidateAll()
 {
-	for(auto& entry : LatteIndexCache.entry)
-	{
-		if (entry.lastPtr != nullptr)
-			g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
-		entry.lastPtr = nullptr;
-		entry.lastCount = 0;
-	}
+	LatteIndexCache.epoch++;
 }
 
-uint64 LatteIndices_GetNextUsageIndex()
+static uint64 LatteIndices_hashData(const void* indexData, LatteIndexType indexType, uint32 count)
 {
-	return LatteIndexCache.currentUsageCounter++;
+	if (indexType == LatteIndexType::AUTO)
+		return 0;
+	const size_t size = (size_t)count * ((indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE) ? 4 : 2);
+	// Fletcher style sums of 64 bit words, much cheaper than decoding the indices again
+	const uint8* data = (const uint8*)indexData;
+	uint64 sum1 = 0, sum2 = 0;
+	size_t remaining = size;
+	while (remaining >= 8)
+	{
+		uint64 v;
+		memcpy(&v, data, 8);
+		sum1 += v;
+		sum2 += sum1;
+		data += 8;
+		remaining -= 8;
+	}
+	if (remaining > 0)
+	{
+		uint64 v = 0;
+		memcpy(&v, data, remaining);
+		sum1 += v;
+		sum2 += sum1;
+	}
+	return sum1 ^ (sum2 * 0x9E3779B97F4A7C15ull) ^ size;
+}
+
+// drops entries that weren't used in the last frames once the cache is full
+static void LatteIndices_trimCache()
+{
+	if (LatteIndexCache.entries.size() < INDEX_CACHE_MAX_ENTRIES)
+		return;
+	const uint32 frame = LatteGPUState.frameCounter;
+	for (auto it = LatteIndexCache.entries.begin(); it != LatteIndexCache.entries.end();)
+	{
+		if (frame - it->second.lastUsedFrame > 2)
+		{
+			g_renderer->indexData_releaseIndexMemory(it->second.indexAllocation);
+			it = LatteIndexCache.entries.erase(it);
+		}
+		else
+			++it;
+	}
 }
 
 uint32 LatteIndices_calculateIndexOutputSize(LattePrimitiveMode primitiveMode, LatteIndexType indexType, uint32 count)
@@ -659,21 +716,28 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	// [x] unpack QUAD indices to triangle indices
 	// [x] calculate min and max index, be careful about primitive restart index
 	// [x] decode data directly into coherent memory buffer?
-	// [ ] better cache implementation, allow to cache across frames
+	// [x] better cache implementation, allow to cache across frames
 
 	// reuse from cache if data didn't change
-	auto cacheEntry = std::find_if(LatteIndexCache.entry.begin(), LatteIndexCache.entry.end(), [indexData, count, primitiveMode, indexType](const auto& entry)
+	const decltype(LatteIndexCache)::CacheKey cacheKey{indexData, count, primitiveMode, indexType};
+	auto cacheEntry = LatteIndexCache.entries.find(cacheKey);
+	if (cacheEntry != LatteIndexCache.entries.end())
 	{
-		return entry.lastPtr == indexData && entry.lastCount == count && entry.lastPrimitiveMode == primitiveMode && entry.lastIndexType == indexType;
-	});
-	if (cacheEntry != LatteIndexCache.entry.end())
-	{
-		indexMax = cacheEntry->indexMax;
-		renderIndexType = cacheEntry->renderIndexType;
-		outputCount = cacheEntry->outputCount;
-		indexAllocation = cacheEntry->indexAllocation;
-		cacheEntry->lastUsed = LatteIndices_GetNextUsageIndex();
-		return;
+		auto& entry = cacheEntry->second;
+		if (entry.validatedEpoch != LatteIndexCache.epoch && LatteIndices_hashData(indexData, indexType, count) == entry.dataHash)
+			entry.validatedEpoch = LatteIndexCache.epoch;
+		if (entry.validatedEpoch == LatteIndexCache.epoch)
+		{
+			indexMax = entry.indexMax;
+			renderIndexType = entry.renderIndexType;
+			outputCount = entry.outputCount;
+			indexAllocation = entry.indexAllocation;
+			entry.lastUsedFrame = LatteGPUState.frameCounter;
+			return;
+		}
+		// the guest changed the data
+		g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
+		LatteIndexCache.entries.erase(cacheEntry);
 	}
 
 	outputCount = 0;
@@ -869,22 +933,14 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	}
 	g_renderer->indexData_uploadIndexMemory(indexAllocation);
 	performanceMonitor.cycle[performanceMonitor.cycleIndex].indexDataUploaded += indexOutputSize;
-	// get least recently used cache entry
-	auto lruEntry = std::min_element(LatteIndexCache.entry.begin(), LatteIndexCache.entry.end(), [](const auto& a, const auto& b)
-	{
-		return a.lastUsed < b.lastUsed;
-	});
-	// invalidate previous allocation
-	if(lruEntry->lastPtr != nullptr)
-		g_renderer->indexData_releaseIndexMemory(lruEntry->indexAllocation);
 	// update cache
-	lruEntry->lastPtr = indexData;
-	lruEntry->lastCount = count;
-	lruEntry->lastPrimitiveMode = primitiveMode;
-	lruEntry->lastIndexType = indexType;
-	lruEntry->indexMax = indexMax;
-	lruEntry->renderIndexType = renderIndexType;
-	lruEntry->outputCount = outputCount;
-	lruEntry->indexAllocation = indexAllocation;
-	lruEntry->lastUsed = LatteIndices_GetNextUsageIndex();
+	LatteIndices_trimCache();
+	auto& entry = LatteIndexCache.entries[cacheKey];
+	entry.dataHash = LatteIndices_hashData(indexData, indexType, count);
+	entry.validatedEpoch = LatteIndexCache.epoch;
+	entry.lastUsedFrame = LatteGPUState.frameCounter;
+	entry.indexMax = indexMax;
+	entry.renderIndexType = renderIndexType;
+	entry.outputCount = outputCount;
+	entry.indexAllocation = indexAllocation;
 }
