@@ -372,3 +372,24 @@ dev mit GamePad „Automatisch“, frischer SPIR-V-Cache für alle Läufe:
 
 - **Mit der Spielprofil-Option: 7,65 → 6,28 W (−1,37 W, −18 %).**
 - Clamp-Variante: Beide Faktoren werden auf ±FLT_MAX begrenzt, dann ist 0 × ∞ = 0 ohne Auswahl, und der Compiler sieht eine normale Multiplikation. Etwa die Hälfte der Ersparnis bei fast gleicher Genauigkeit. Abweichungen: NaN × x ≠ 0 ergibt ±∞ statt NaN, ∞ × |x| < 1 ergibt einen großen endlichen Wert statt ∞. Nur ein sauberer Lauf, nicht in dev.
+
+## Release-Vorbereitung Cidemu 0.2 (2026-11-10)
+
+Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Build läuft die Emulation in `:EmulationProcess`.
+
+- Release gegen Profil-Build (rs1, gleicher nativer Code): 59,9 FPS und p99 18,2 ms bei beiden, Leistung 6,42 / 6,41 W gegen 6,35 / 6,34 W. Der Release-Build liegt in beiden Paaren um 0,07 W höher, Ursache offen (Kotlin minifiziert, zweiter Prozess).
+- Review der eigenen Renderer- und JIT-Commits, behobene Funde:
+  - erste Löschung einer neuen Textur nicht mehr aufschieben (Layout UNDEFINED)
+  - GamePad-Swapchain auch im GPU-Leerlauf abbauen (sonst Hänger des UI-Threads bei pausiertem Spiel)
+  - Render-Pass nur behalten, wenn der Draw die zusätzlichen Attachments nicht berührt
+  - GamePad-Bild vor der Änderungsprüfung aktualisieren
+  - Index-Cache höchstens einmal pro Bild durchsuchen
+  - Xbyak-Ausnahmen beim AArch64-Codegen abfangen
+- Ein Epoch-Bump des Index-Caches bei jeder TC-Invalidierung kostete im Hafen GPU-Thread-Zeit (LCU invalidiert Uniform-Blöcke ständig) und wurde verworfen. Upstream prüft innerhalb einer Epoche genauso wenig.
+- Die strengere Render-Pass-Prüfung lehnte im Hafen rund 21 Wiederverwendungen pro Bild ab (GPU-Arbeit +13 %). Alle waren Draws mit `CB_COLOR_CONTROL.SPECIAL_OP = DISABLE`, also reine Tiefen-Draws. Vorher haben diese im behaltenen Pass tatsächlich Farbe geschrieben. Jetzt maskiert die Pipeline Farbe bei deaktivierter Farbausgabe, und der Pass darf bleiben.
+
+### Cocoon Shell hinter dem GamePad-Bild
+
+- Cocoon Shell (`rip.moth.cocoonshell`, Launcher auf dem unteren Bildschirm) läuft hinter der GamePad-Presentation weiter: rund 21 Bilder/s, 26–37 % eines CPU-Kerns, dazu SurfaceFlinger-Arbeit.
+- Eine Presentation ist nur ein Fenster über der Activity des Displays. Mit einer eigenen Activity auf dem Display (`EmulationDisplayActivity`, Branch `perf/pad-activity`) stoppt Android Cocoon: 0 Bilder in 10 s.
+- Eine nicht fokussierbare Activity führt zu ANR: Der Start macht das Display zum fokussierten, ohne fokussierbares Fenster hält Android die Gamepad-Eingaben zurück. Die Activity ist deshalb fokussierbar und reicht Tasten und Sticks an die Emulations-Activity weiter.
