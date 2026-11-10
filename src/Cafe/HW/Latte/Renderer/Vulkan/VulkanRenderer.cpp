@@ -4055,7 +4055,8 @@ void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 s
 	texture_clearLater(vkTexture, sliceIndex, mipIndex, aspectMask, value);
 }
 
-// the render area must cover the whole slice and the attachment must be the cleared slice and mip
+// the render area must cover the whole slice and the attachment must be the cleared slice and mip. The clear value is
+// interpreted in the format of the attachment, so it also has to be the format of the image
 static bool GetClearAttachment(CachedFBOVk* fboVk, LatteTextureVk* texture, sint32 sliceIndex, sint32 mipIndex, VkImageAspectFlags aspectMask, const VkClearValue& value, VkClearAttachment& attachment)
 {
 	sint32 width, height;
@@ -4063,7 +4064,7 @@ static bool GetClearAttachment(CachedFBOVk* fboVk, LatteTextureVk* texture, sint
 	if (fboVk->GetExtend().width != (uint32)width || fboVk->GetExtend().height != (uint32)height)
 		return false;
 	auto isClearedSlice = [&](LatteTextureView* view) {
-		return view && view->baseTexture == texture && view->firstSlice == sliceIndex && view->firstMip == mipIndex;
+		return view && view->baseTexture == texture && view->firstSlice == sliceIndex && view->firstMip == mipIndex && static_cast<LatteTextureViewVk*>(view)->GetFormat() == texture->GetFormat();
 	};
 	if (aspectMask == VK_IMAGE_ASPECT_COLOR_BIT)
 	{
