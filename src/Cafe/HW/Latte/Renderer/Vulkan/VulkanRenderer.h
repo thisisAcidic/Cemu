@@ -559,6 +559,12 @@ private:
 
 	void draw_setRenderPass();
 	void draw_endRenderPass();
+	// statistics for vk.stats: why render passes end, how many begin
+	void draw_countRenderPassEnd(uint32 reason) { if (m_state.activeRenderpassFBO) m_renderPassEndStats[reason]++; }
+	uint64 m_renderPassEndStats[17]{};
+	uint64 m_renderPassBeginCount{};
+	uint64 m_fboChangeStats[7]{};
+	uint64 m_drawCount{};
 
 	void draw_beginSequence() override;
 	void draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext) override;

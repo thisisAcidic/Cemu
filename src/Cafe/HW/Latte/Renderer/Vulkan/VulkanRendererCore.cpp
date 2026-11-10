@@ -1233,7 +1233,49 @@ void VulkanRenderer::draw_setRenderPass()
 		}
 		return;
 	}
+	if (m_state.activeRenderpassFBO)
+	{
+		// statistics: how the attachments of the two passes relate
+		CachedFBOVk* prev = m_state.activeRenderpassFBO;
+		auto image = [](LatteTextureView* view) { return view ? view->baseTexture : nullptr; };
+		bool newInPrev = true, prevInNew = true, anyShared = false;
+		for (int i = 0; i < 8; i++)
+		{
+			LatteTexture* a = image(prev->colorBuffer[i].texture);
+			LatteTexture* b = image(fboVk->colorBuffer[i].texture);
+			if (b && a != b)
+				newInPrev = false;
+			if (a && a != b)
+				prevInNew = false;
+			if (a && a == b)
+				anyShared = true;
+		}
+		LatteTexture* da = image(prev->depthBuffer.texture);
+		LatteTexture* db = image(fboVk->depthBuffer.texture);
+		if (db && da != db)
+			newInPrev = false;
+		if (da && da != db)
+			prevInNew = false;
+		if (da && da == db)
+			anyShared = true;
+		uint32 category;
+		if (prev == fboVk)
+			category = 0; // split because of a self dependency
+		else if (newInPrev && prevInNew)
+			category = 1; // same images
+		else if (newInPrev)
+			category = 2; // subset of the running pass
+		else if (prevInNew)
+			category = 3; // superset of the running pass
+		else if (anyShared)
+			category = 4; // partly shared
+		else
+			category = 5; // other target
+		m_fboChangeStats[category]++;
+	}
+	draw_countRenderPassEnd(11); // fboChange
 	draw_endRenderPass();
+	m_renderPassBeginCount++;
 	if (m_state.descriptorSetsChanged)
 		sync_inputTexturesChanged();
 
@@ -1840,6 +1882,7 @@ void VulkanRenderer::draw_endSequence()
 		LatteRenderTarget_trackUpdates();
 	bool hasReadback = LatteTextureReadback_Update();
 	m_recordedDrawcalls++;
+	m_drawCount++;
 	if (m_recordedDrawcalls >= m_submitThreshold || hasReadback)
 	{
 		SubmitCommandBuffer();
@@ -1848,6 +1891,7 @@ void VulkanRenderer::draw_endSequence()
 
 void VulkanRenderer::debug_genericBarrier()
 {
+	draw_countRenderPassEnd(12); // genericBarrier
 	draw_endRenderPass();
 
 	VkMemoryBarrier memoryBarrier{};

@@ -52,6 +52,7 @@ bool LatteQueryObjectVk::getResult(uint64& numSamplesPassed)
 
 void LatteQueryObjectVk::beginFragment()
 {
+	m_rendererVk->draw_countRenderPassEnd(14); // VulkanQuery:beginFragment
 	m_rendererVk->draw_endRenderPass();
 
 	handleFinishedFragments();
@@ -80,6 +81,7 @@ void LatteQueryObjectVk::begin()
 
 void LatteQueryObjectVk::endFragment()
 {
+	m_rendererVk->draw_countRenderPassEnd(15); // VulkanQuery:endFragment
 	m_rendererVk->draw_endRenderPass();
 
 	cemu_assert_debug(m_hasActiveFragment);

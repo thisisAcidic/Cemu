@@ -2155,6 +2155,7 @@ bool VulkanRenderer::ImguiBegin(bool mainWindow)
 	if (!AcquireNextSwapchainImage(mainWindow))
 		return false;
 
+	draw_countRenderPassEnd(0); // imgui
 	draw_endRenderPass();
 	m_state.currentPipeline = VK_NULL_HANDLE;
 
@@ -2301,6 +2302,7 @@ void VulkanRenderer::WaitForNextFinishedCommandBuffer()
 
 void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphore waitSemaphore)
 {
+	draw_countRenderPassEnd(1); // submit
 	draw_endRenderPass();
 
 	occlusionQuery_notifyEndCommandBuffer();
@@ -3309,6 +3311,31 @@ void VulkanBenchmarkPrintResults();
 
 void VulkanRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+	static const bool s_statsEnabled = []() { std::error_code ec; return fs::exists(ActiveSettings::GetUserDataPath("vk.stats"), ec); }();
+	static uint32 s_statsFrames = 0;
+	if (s_statsEnabled && ++s_statsFrames == 600)
+	{
+		static const char* s_reasonNames[] = { "imgui", "submit", "clearColorRaw", "backbufferQuad", "clearSlice", "clearDepth", "loadSlice", "copyImage", "bufferUpload", "bufferCopy", "streamoutCopy", "fboChange", "genericBarrier", "TextureReadbackVk:StartTransfer", "VulkanQuery:beginFragment", "VulkanQuery:endFragment", "VulkanSurfaceCopy:surfaceCopy_viaDrawcall" };
+		std::string ends;
+		for (size_t i = 0; i < std::size(m_renderPassEndStats); i++)
+		{
+			if (m_renderPassEndStats[i])
+				ends += fmt::format(" {} {:.1f},", s_reasonNames[i], m_renderPassEndStats[i] / 600.0);
+			m_renderPassEndStats[i] = 0;
+		}
+		cemuLog_log(LogType::Force, "Vulkan stats per frame: {:.1f} draws, {:.1f} render passes begun, ends:{}", m_drawCount / 600.0, m_renderPassBeginCount / 600.0, ends);
+		static const char* s_changeNames[] = { "self dependency", "same images", "subset", "superset", "partly shared", "other target", "unused" };
+		std::string changes;
+		for (size_t i = 0; i < std::size(m_fboChangeStats); i++)
+		{
+			changes += fmt::format(" {} {:.1f},", s_changeNames[i], m_fboChangeStats[i] / 600.0);
+			m_fboChangeStats[i] = 0;
+		}
+		cemuLog_log(LogType::Force, "Vulkan render target changes per frame:{}", changes);
+		m_drawCount = 0;
+		m_renderPassBeginCount = 0;
+		s_statsFrames = 0;
+	}
 	SubmitCommandBuffer();
 
 	if (swapTV && IsSwapchainInfoValid(true))
@@ -3338,6 +3365,7 @@ void VulkanRenderer::ClearColorbuffer(bool padView)
 
 void VulkanRenderer::ClearColorImageRaw(VkImage image, uint32 sliceIndex, uint32 mipIndex, const VkClearColorValue& color, VkImageLayout inputLayout, VkImageLayout outputLayout)
 {
+	draw_countRenderPassEnd(2); // clearColorRaw
 	draw_endRenderPass();
 
 	VkImageSubresourceRange subresourceRange{};
@@ -3408,6 +3436,7 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 
 	auto& chainInfo = GetChainInfo(!padView);
 	LatteTextureViewVk* texViewVk = (LatteTextureViewVk*)texView;
+	draw_countRenderPassEnd(3); // backbufferQuad
 	draw_endRenderPass();
 
 	// barrier for input texture
@@ -3675,6 +3704,7 @@ VkDescriptorSetInfo::~VkDescriptorSetInfo()
 
 void VulkanRenderer::texture_clearSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex)
 {
+	draw_countRenderPassEnd(4); // clearSlice
 	draw_endRenderPass();
 	auto vkTexture = (LatteTextureVk*)hostTexture;
 	if (vkTexture->isDepth)
@@ -3698,6 +3728,7 @@ void VulkanRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 s
 
 void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue)
 {
+	draw_countRenderPassEnd(5); // clearDepth
 	draw_endRenderPass(); // vkCmdClearDepthStencilImage must not be inside renderpass
 
 	auto vkTexture = (LatteTextureVk*)hostTexture;
@@ -3743,6 +3774,7 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 	auto vkImageObj = vkTexture->GetImageObj();
 	vkImageObj->flagForCurrentCommandBuffer();
 
+	draw_countRenderPassEnd(6); // loadSlice
 	draw_endRenderPass();
 
 	VkMemoryRequirements memRequirements;
@@ -3856,6 +3888,7 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 	LatteTextureVk* srcVk = static_cast<LatteTextureVk*>(src);
 	LatteTextureVk* dstVk = static_cast<LatteTextureVk*>(dst);
 
+	draw_countRenderPassEnd(7); // copyImage
 	draw_endRenderPass(); // vkCmdCopyImage must be called outside of a renderpass
 
 	VKRObjectTexture* srcVkObj = srcVk->GetImageObj();
@@ -4075,6 +4108,7 @@ void VulkanRenderer::bufferCache_init(const sint32 bufferSize)
 
 void VulkanRenderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset)
 {
+	draw_countRenderPassEnd(8); // bufferUpload
 	draw_endRenderPass();
 
 	VKRSynchronizedRingAllocator& vkMemAllocator = memoryManager->getStagingAllocator();
@@ -4101,6 +4135,7 @@ void VulkanRenderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 buffe
 void VulkanRenderer::bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 size)
 {
 	cemu_assert_debug(!m_useHostMemoryForCache);
+	draw_countRenderPassEnd(9); // bufferCopy
 	draw_endRenderPass();
 
 	barrier_sequentializeTransfer();
@@ -4119,6 +4154,7 @@ void VulkanRenderer::bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32
 
 void VulkanRenderer::bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size)
 {
+	draw_countRenderPassEnd(10); // streamoutCopy
 	draw_endRenderPass();
 
 	VkBuffer dstBuffer;
