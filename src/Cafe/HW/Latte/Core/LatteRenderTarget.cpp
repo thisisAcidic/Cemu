@@ -1107,7 +1107,11 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
 	{
 		if (s_padUpdateMode != LattePadUpdateMode::Full)
+		{
+			// compare the data the copy would show, not an outdated version of it
+			LatteTexture_UpdateDataToLatest(texView->baseTexture);
 			g_renderer->TrackPadImageChanges(texView);
+		}
 		if (LatteRenderTarget_ShouldUpdatePadWindow())
 			LatteRenderTarget_copyToBackbuffer(texView, true);
 	}
