@@ -66,9 +66,18 @@ def thermal_summary(path, window_s):
     # while charging the battery current is the charge current, not what the device uses
     charging = any(int(row['batt_ua']) > 0 for row in scene)
     power = [-int(row['batt_ua']) * int(row['batt_uv']) / 1e12 for row in scene]
+    # on the charger the device uses what comes in over USB minus what goes into the battery. The charger's own losses
+    # are included, they are small once the battery is full and hardly takes any current
+    on_usb = [row for row in scene if row.get('usb_ua') and int(row['usb_ua']) > 0 and row.get('usb_uv')]
+    usb_power = [(int(row['usb_ua']) * int(row['usb_uv']) - int(row['batt_ua']) * int(row['batt_uv'])) / 1e12 for row in on_usb]
+    charge_ua = [int(row['batt_ua']) for row in on_usb]
+    levels = [int(row['batt_level']) for row in scene if row.get('batt_level')]
     return {
         'power_scene_avg_w': None if charging or not power else sum(power) / len(power),
         'charging': charging,
+        'power_usb_avg_w': sum(usb_power) / len(usb_power) if usb_power else None,
+        'battery_charge_ma_avg': sum(charge_ua) / len(charge_ua) / 1000 if charge_ua else None,
+        'battery_level': levels[-1] if levels else None,
         'cpu_temp_max_c': max(maxc, default=0), 'cpu_temp_end_c': maxc[-1] if maxc else 0,
         'gpu_temp_max_c': max(maxg, default=0),
         'prime_core_mhz_min': min(prime, default=0), 'prime_core_mhz_avg': sum(prime) / len(prime) if prime else 0,

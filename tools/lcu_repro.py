@@ -96,7 +96,7 @@ def main():
         time.sleep(6)
         adb('shell', 'input', '-d', '0', 'tap', '533', '307')
 
-        wait_for(args.out, 'title', lambda im: matches(im, 'title'), 300)
+        wait_for(args.out, 'title', lambda im: matches(im, 'title'), 600)
         pad('press', BTN_START)
         wait_for(args.out, 'menu', lambda im: matches(im, 'menu'), 30)
         for _ in range(3):  # Spiel laden, slot 1, confirm

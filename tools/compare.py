@@ -12,6 +12,9 @@ ROOT = '/Users/acidic/Documents/git/CEMU-gamedata/runs'
 
 def power(thermal):
     if thermal.get('charging'):
+        # measured on the charger: input minus battery charging, marked with u, valid once the battery is nearly full
+        if thermal.get('power_usb_avg_w'):
+            return f'{thermal["power_usb_avg_w"]:5.2f}Wu'
         return 'charging'
     return f'{thermal.get("power_scene_avg_w") or 0:6.2f}W'
 
