@@ -18,7 +18,7 @@ import lcu_repro as r
 
 ROOT = '/Users/acidic/Documents/git/CEMU-gamedata/runs'
 TOOLS = os.path.dirname(os.path.abspath(__file__))
-DRIVERS = '/storage/emulated/0/Android/data/info.cemu.cemu.profile/files/customDrivers'
+DRIVERS = f'/storage/emulated/0/Android/data/{r.PKG}/files/customDrivers'
 TURNIP = 'fe1e2b85-a742-46d9-8884-23abd7ea946f'
 PACK = 'graphicPacks/LEGOCityUndercover_60fps/rules.txt'
 PROFILE = 'gameProfiles/0005000010101b00.ini'
@@ -132,7 +132,7 @@ def main():
     r.adb('shell', f"{'touch' if args.gputime else 'rm -f'} {r.FILES}/vk.gputime")
     r.adb('shell', f"{'touch' if args.jitmap else 'rm -f'} {r.FILES}/jitmap.enable; rm -rf {r.FILES}/jitmap.txt {r.FILES}/dump/recompiler")
     r.adb('shell', f"{'touch' if args.llvm else 'rm -f'} {r.FILES}/llvm.enable")
-    thermal = subprocess.Popen([os.path.join(TOOLS, 'thermal_log.sh'), os.path.join(out, 'thermal.csv'), '5'], start_new_session=True)
+    thermal = subprocess.Popen([os.path.join(TOOLS, 'thermal_log.sh'), os.path.join(out, 'thermal.csv'), '5'], start_new_session=True, env={**os.environ, 'CEMU_PROCESS': r.EMU_PROCESS})
     power_log = subprocess.Popen([sys.executable, os.path.join(TOOLS, 'power_log.py'), os.path.join(out, 'power.csv')], start_new_session=True)
     cmd = [sys.executable, os.path.join(TOOLS, 'lcu_repro.py'), '-', out, '--cooldown', str(args.cooldown)]
     if args.settle:

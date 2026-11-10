@@ -12,7 +12,7 @@ import lcu_repro as r
 
 TOP = '4630946441858561667'
 BOTTOM = '4630946482288158084'
-LOG = '/sdcard/Android/data/info.cemu.cemu.profile/files/log.txt'
+LOG = f'{r.FILES}/log.txt'
 
 
 def snap(out, label):

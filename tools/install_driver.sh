@@ -11,7 +11,7 @@ meta=$(find "$dir" -name meta.json | head -1)
 [ -n "$meta" ] || { echo "no meta.json in $zip"; exit 1; }
 src=$(dirname "$meta")
 cat "$meta"; echo
-dest=/sdcard/Android/data/info.cemu.cemu.profile/files/customDrivers/$name
+dest=/sdcard/Android/data/${CEMU_PKG:-info.cemu.cemu.profile}/files/customDrivers/$name
 # adb push may not create directories below Android/data, the shell may
 adb shell "rm -rf $dest && mkdir -p $dest"
 for f in "$src"/*; do

@@ -3,6 +3,8 @@
 # Samples Thor temperatures and clocks over adb until killed. Unreadable files are reported once and skipped.
 OUT=$1
 INTERVAL=${2:-5}
+# CEMU_PROCESS: process to sample threads of, e.g. com.cidix.cidemu:EmulationProcess for a release build
+PROCESS=${CEMU_PROCESS:-info.cemu.cemu.profile}
 adb shell "
 zones=''
 for z in /sys/class/thermal/thermal_zone*; do
@@ -23,7 +25,7 @@ while true; do
   printf ',%s,%s' \$(cat /sys/class/power_supply/battery/current_now 2>/dev/null) \$(cat /sys/class/power_supply/battery/voltage_now 2>/dev/null)
   # cpu time (utime + stime, clock ticks) of the emulated main core and the GPU thread
   core1=''; gpu=''; core0=''; core2=''; rec=''; llvm=''
-  p=\$(pidof info.cemu.cemu.profile)
+  p=\$(pidof $PROCESS)
   for t in /proc/\$p/task/*; do
     case \$(cat \$t/comm 2>/dev/null) in
       'OSSched[core=1]') core1=\$(cut -d' ' -f14,15 \$t/stat | tr ' ' '+');;

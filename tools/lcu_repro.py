@@ -11,7 +11,9 @@ import time
 
 from PIL import Image, ImageChops, ImageStat
 
-PKG = 'info.cemu.cemu.profile'
+# the release build runs the emulation in its own process, see EMU_PROCESS
+PKG = os.environ.get('CEMU_PKG', 'info.cemu.cemu.profile')
+EMU_PROCESS = PKG + ':EmulationProcess' if not PKG.endswith(('.profile', '.debug')) else PKG
 FILES = f'/sdcard/Android/data/{PKG}/files'
 REF_DIR = '/Users/acidic/Documents/git/CEMU-gamedata/repro_ref'
 BOXES = {'title': (40, 325, 330, 360), 'menu': (40, 225, 320, 300), 'notice': (130, 200, 570, 265)}
