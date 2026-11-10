@@ -30,3 +30,16 @@ color attachments.
 
 Measured on an AYN Thor (Snapdragon 8 Gen 2), LEGO City Undercover harbor, 60 FPS pack: GPU work −29 %, whole
 device power 7.65 W → 6.65 W together with other changes, 99th percentile frame time 22.4 → 18.1 ms.
+
+## Weitere Pakete für Cemu (lokale Branches, auf `cemu/main`, konfliktfrei)
+
+| Branch | Commits | Inhalt |
+|---|---|---|
+| `upstream/vk-clears-in-renderpass` | 7 | Clears im Render-Pass, Render-Pass-Wiederverwendung, Farbmaske bei deaktivierter Farbausgabe |
+| `upstream/idle-sleep` | 3 | Hauptkern und GPU-Thread schlafen im Leerlauf, Draw-Zeitstempel einmal pro Bild |
+| `upstream/swapchain-wait` | 1 | Warten auf das vorherige Bild pro Swapchain (TV- und GamePad-Fenster) |
+| `upstream/aarch64-codegen` | 7 | AArch64-JIT: kürzere Befehle, Flag-Sprünge, Zyklen im Register, blr/ret, Code-Arena, Xbyak-Ausnahme |
+| `upstream/index-cache` | 2 | Indexdaten über Bilder hinweg cachen |
+| `upstream/cmd-pools` | 2 | Command-Pool pro Command-Buffer, Reset auf eigenem Thread |
+
+Nicht ohne Anpassung übertragbar: Warten auf das Acquire-Semaphor im nächsten Submit (`c589f3fb`), hängt an Fork-Änderungen. Android-spezifisches (Display-Activity, GamePad-Bildrate, Skalierung durch die Display-Hardware, Surface-Neuaufbau) gehört zum Android-Port von SSimco, nicht zu Cemu.
