@@ -8,6 +8,7 @@ import info.cemu.cemu.common.settings.AppSettings
 import info.cemu.cemu.common.settings.AppSettingsStore
 import info.cemu.cemu.common.settings.EmulationSettings
 import info.cemu.cemu.common.settings.ExternalDisplayPadScreen
+import info.cemu.cemu.common.settings.GamePadFrameRate
 import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.settings.GuiSettings
 import info.cemu.cemu.common.ui.localization.getAvailableLanguages
@@ -65,6 +66,14 @@ class GeneralSettingsViewModel(
                         externalDisplayPadScreen = externalDisplayPadScreen
                     )
                 )
+            }
+        }
+    }
+
+    fun setGamePadFrameRate(gamePadFrameRate: GamePadFrameRate) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                it.copy(emulationSettings = it.emulationSettings.copy(gamePadFrameRate = gamePadFrameRate))
             }
         }
     }

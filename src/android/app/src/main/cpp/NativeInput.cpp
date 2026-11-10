@@ -1,4 +1,5 @@
 #include "AndroidInputHelpers.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 #include "input/api/Device/DeviceController.h"
 #include "input/api/Android/ControllerManager.h"
 #include "input/ControllerFactory.h"
@@ -84,6 +85,8 @@ namespace NativeInput
 	{
 		auto& instance = InputManager::instance();
 		auto& touchInfo = isTV ? instance.m_main_mouse : instance.m_pad_mouse;
+		if (!isTV)
+			LatteRenderTarget_NotifyPadTouched();
 		std::scoped_lock lock(touchInfo.m_mutex);
 		touchInfo.position = {x, y};
 		touchInfo.left_down = touchInfo.left_down_toggle = status;

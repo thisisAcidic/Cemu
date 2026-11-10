@@ -933,6 +933,7 @@ VulkanRenderer::~VulkanRenderer()
 
 	// delete null objects
 	DeleteNullObjects();
+	padChangeTracking_destroy();
 
 	// delete buffers
 	memoryManager->DeleteBuffer(m_uniformVarBuffer, m_uniformVarBufferMemory);
@@ -1049,6 +1050,7 @@ void VulkanRenderer::UpdatePadSwapchain()
 	{
 		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(false, size);
 		m_padSwapchainInfo->Create();
+		LatteRenderTarget_NotifyPadImageChanged();
 	}
 	catch (const std::exception& ex)
 	{
@@ -3084,14 +3086,19 @@ VkPipelineShaderStageCreateInfo VulkanRenderer::CreatePipelineShaderStageCreateI
 VkPipeline VulkanRenderer::backbufferBlit_createGraphicsPipeline(VkDescriptorSetLayout descriptorLayout, bool padView, RendererOutputShader* shader)
 {
 	auto& chainInfo = GetChainInfo(!padView);
+	return backbufferBlit_createGraphicsPipeline(descriptorLayout, chainInfo.m_swapchainRenderPass, shader, padView ? 1 : 0);
+}
 
+// target tells apart render passes the pipeline is used with: 0 for the TV swapchain, 1 for the GamePad swapchain, 2 for GamePad change tracking
+VkPipeline VulkanRenderer::backbufferBlit_createGraphicsPipeline(VkDescriptorSetLayout descriptorLayout, VkRenderPass renderPass, RendererOutputShader* shader, uint64 target)
+{
 	RendererShaderVk* vertexRendererShader = static_cast<RendererShaderVk*>(shader->GetVertexShader());
 	RendererShaderVk* fragmentRendererShader = static_cast<RendererShaderVk*>(shader->GetFragmentShader());
 
 	uint64 hash = 0;
 	hash += (uint64)vertexRendererShader;
 	hash += (uint64)fragmentRendererShader;
-	hash += ((uint64)padView) << 1;
+	hash += target << 1;
 
 	const auto it = m_backbufferBlitPipelineCache.find(hash);
 	if (it != m_backbufferBlitPipelineCache.cend())
@@ -3181,7 +3188,7 @@ VkPipeline VulkanRenderer::backbufferBlit_createGraphicsPipeline(VkDescriptorSet
 	pipelineInfo.pMultisampleState = &multisampling;
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.layout = m_pipelineLayout;
-	pipelineInfo.renderPass = chainInfo.m_swapchainRenderPass;
+	pipelineInfo.renderPass = renderPass;
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
@@ -3598,6 +3605,204 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 
 	// mark current swapchain image as well defined
 	chainInfo.hasDefinedSwapchainImage = true;
+}
+
+static const std::string s_padTileHashShaderSource =
+R"(
+void outputShader()
+{
+	ivec2 size = textureSize(textureSrc, 0);
+	ivec2 base = ivec2(gl_FragCoord.xy) * 8;
+	uint hash = 2166136261u;
+	for (int y = 0; y < 8; y++)
+	{
+		for (int x = 0; x < 8; x++)
+		{
+			uvec4 c = floatBitsToUint(texelFetch(textureSrc, min(base + ivec2(x, y), size - 1), 0));
+			hash = (hash ^ c.r) * 16777619u;
+			hash = (hash ^ c.g) * 16777619u;
+			hash = (hash ^ c.b) * 16777619u;
+			hash = (hash ^ c.a) * 16777619u;
+		}
+	}
+	colorOut0 = unpackUnorm4x8(hash);
+}
+)";
+
+void VulkanRenderer::padChangeTracking_create()
+{
+	auto& tracking = m_padChangeTracking;
+	tracking.shader = std::make_unique<RendererOutputShader>(RendererOutputShader::GetVulkanVertexSource(false), s_padTileHashShaderSource);
+
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	imageInfo.extent = {tracking.MAX_TILES, tracking.MAX_TILES, 1};
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	if (vkCreateImage(m_logicalDevice, &imageInfo, nullptr, &tracking.image) != VK_SUCCESS)
+		UnrecoverableError("Failed to create GamePad change tracking image");
+	tracking.imageMemory = memoryManager->imageMemoryAllocate(tracking.image);
+
+	VkImageViewCreateInfo viewInfo{};
+	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewInfo.image = tracking.image;
+	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+	if (vkCreateImageView(m_logicalDevice, &viewInfo, nullptr, &tracking.imageView) != VK_SUCCESS)
+		UnrecoverableError("Failed to create GamePad change tracking image view");
+
+	VkAttachmentDescription colorAttachment{};
+	colorAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	VkAttachmentReference colorAttachmentRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+	VkSubpassDescription subpass{};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+	VkRenderPassCreateInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = 1;
+	renderPassInfo.pAttachments = &colorAttachment;
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+	if (vkCreateRenderPass(m_logicalDevice, &renderPassInfo, nullptr, &tracking.renderPass) != VK_SUCCESS)
+		UnrecoverableError("Failed to create GamePad change tracking render pass");
+
+	VkFramebufferCreateInfo framebufferInfo{};
+	framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebufferInfo.renderPass = tracking.renderPass;
+	framebufferInfo.attachmentCount = 1;
+	framebufferInfo.pAttachments = &tracking.imageView;
+	framebufferInfo.width = tracking.MAX_TILES;
+	framebufferInfo.height = tracking.MAX_TILES;
+	framebufferInfo.layers = 1;
+	if (vkCreateFramebuffer(m_logicalDevice, &framebufferInfo, nullptr, &tracking.framebuffer) != VK_SUCCESS)
+		UnrecoverableError("Failed to create GamePad change tracking framebuffer");
+
+	const VkDeviceSize bufferSize = tracking.SLOT_SIZE * tracking.SLOT_COUNT;
+	if (!memoryManager->CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, tracking.buffer, tracking.bufferMemory))
+		memoryManager->CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, tracking.buffer, tracking.bufferMemory);
+	void* bufferPtr;
+	vkMapMemory(m_logicalDevice, tracking.bufferMemory, 0, VK_WHOLE_SIZE, 0, &bufferPtr);
+	tracking.bufferPtr = (uint8*)bufferPtr;
+}
+
+void VulkanRenderer::padChangeTracking_destroy()
+{
+	auto& tracking = m_padChangeTracking;
+	if (tracking.renderPass == VK_NULL_HANDLE)
+		return;
+	vkUnmapMemory(m_logicalDevice, tracking.bufferMemory);
+	memoryManager->DeleteBuffer(tracking.buffer, tracking.bufferMemory);
+	vkDestroyFramebuffer(m_logicalDevice, tracking.framebuffer, nullptr);
+	vkDestroyRenderPass(m_logicalDevice, tracking.renderPass, nullptr);
+	vkDestroyImageView(m_logicalDevice, tracking.imageView, nullptr);
+	vkDestroyImage(m_logicalDevice, tracking.image, nullptr);
+	memoryManager->imageMemoryFree(tracking.imageMemory);
+	tracking.shader.reset();
+	tracking.renderPass = VK_NULL_HANDLE;
+}
+
+// compares the tile hashes of finished frames, oldest first
+void VulkanRenderer::padChangeTracking_processFinished()
+{
+	auto& tracking = m_padChangeTracking;
+	for (uint32 i = 0; i < tracking.SLOT_COUNT; i++)
+	{
+		const uint32 slot = (tracking.nextSlot + i) % tracking.SLOT_COUNT;
+		if (!tracking.slotPending[slot] || !HasCommandBufferFinished(tracking.slotCommandBufferId[slot]))
+			continue;
+		tracking.slotPending[slot] = false;
+		const uint8* hashes = tracking.bufferPtr + slot * tracking.SLOT_SIZE;
+		const uint32 size = tracking.slotSize[slot];
+		if (tracking.previousHashes.size() != size || memcmp(tracking.previousHashes.data(), hashes, size) != 0)
+		{
+			tracking.previousHashes.assign(hashes, hashes + size);
+			LatteRenderTarget_NotifyPadImageChanged();
+		}
+	}
+}
+
+void VulkanRenderer::TrackPadImageChanges(LatteTextureView* texView)
+{
+	auto& tracking = m_padChangeTracking;
+	if (tracking.renderPass == VK_NULL_HANDLE)
+		padChangeTracking_create();
+	padChangeTracking_processFinished();
+	const uint32 slot = tracking.nextSlot;
+	if (tracking.slotPending[slot])
+		return; // the GPU is behind, skip this frame
+
+	const uint32 tilesX = std::min<uint32>((texView->baseTexture->width + 7) / 8, tracking.MAX_TILES);
+	const uint32 tilesY = std::min<uint32>((texView->baseTexture->height + 7) / 8, tracking.MAX_TILES);
+	LatteTextureViewVk* texViewVk = (LatteTextureViewVk*)texView;
+	texture_flushPendingClear(texView->baseTexture);
+	draw_endRenderPass();
+
+	// wait for rendering to the GamePad image and for the previous copy of the tile hashes
+	VkMemoryBarrier memoryBarrier{};
+	memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	memoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+	memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	vkCmdPipelineBarrier(m_state.currentCommandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+
+	auto pipeline = backbufferBlit_createGraphicsPipeline(m_swapchainDescriptorSetLayout, tracking.renderPass, tracking.shader.get(), 2);
+	auto descriptorSet = backbufferBlit_createDescriptorSet(m_swapchainDescriptorSetLayout, texViewVk, false);
+
+	VkRenderPassBeginInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassInfo.renderPass = tracking.renderPass;
+	renderPassInfo.framebuffer = tracking.framebuffer;
+	renderPassInfo.renderArea.extent = {tilesX, tilesY};
+	VkViewport viewport{0.0f, 0.0f, (float)tilesX, (float)tilesY, 0.0f, 1.0f};
+	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &viewport);
+	VkRect2D scissor{{0, 0}, {tilesX, tilesY}};
+	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &scissor);
+
+	vkCmdBeginRenderPass(m_state.currentCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(m_state.currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+	m_state.currentPipeline = pipeline;
+	auto outputUniforms = tracking.shader->FillUniformBlockBuffer(*texView, {(sint32)tilesX, (sint32)tilesY}, true);
+	auto outputUniformOffset = uniformData_uploadUniformDataBufferGetOffset({(uint8*)&outputUniforms, sizeof(decltype(outputUniforms))});
+	vkCmdBindDescriptorSets(m_state.currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &descriptorSet, 1, &outputUniformOffset);
+	vkCmdDraw(m_state.currentCommandBuffer, 6, 1, 0, 0);
+	vkCmdEndRenderPass(m_state.currentCommandBuffer);
+
+	memoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	memoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	vkCmdPipelineBarrier(m_state.currentCommandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+	VkBufferImageCopy region{};
+	region.bufferOffset = slot * tracking.SLOT_SIZE;
+	region.bufferRowLength = tilesX;
+	region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+	region.imageExtent = {tilesX, tilesY, 1};
+	vkCmdCopyImageToBuffer(m_state.currentCommandBuffer, tracking.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tracking.buffer, 1, &region);
+	memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	memoryBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+	vkCmdPipelineBarrier(m_state.currentCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+
+	// the game may still render after copying its GamePad image, restore the state its draws rely on
+	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
+	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &m_state.currentScissorRect);
+	m_state.descriptorSetsChanged = true;
+
+	tracking.slotCommandBufferId[slot] = GetCurrentCommandBufferId();
+	tracking.slotSize[slot] = tilesX * tilesY * 4;
+	tracking.slotPending[slot] = true;
+	tracking.nextSlot = (slot + 1) % tracking.SLOT_COUNT;
 }
 
 void VulkanRenderer::CreateDescriptorPool()

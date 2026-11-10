@@ -77,6 +77,10 @@ public:
 	// the renderer can present a smaller image that the display scales up. Returns false if the image is presented at window size
 	virtual bool GetScaledPresentSize(bool padView, sint32 imageWidth, sint32 imageHeight, sint32& presentWidth, sint32& presentHeight) { return false; }
 
+	// renderers that can tell whether the GamePad image changed call LatteRenderTarget_NotifyPadImageChanged() when it does
+	virtual bool SupportsPadImageChangeTracking() const { return false; }
+	virtual void TrackPadImageChanges(LatteTextureView* texView) {}
+
 	virtual void DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter,
 												sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 												bool padView, bool clearBackground) = 0;

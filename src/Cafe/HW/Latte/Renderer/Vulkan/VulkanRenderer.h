@@ -286,6 +286,8 @@ public:
 #if BOOST_PLAT_ANDROID
 	bool GetScaledPresentSize(bool padView, sint32 imageWidth, sint32 imageHeight, sint32& presentWidth, sint32& presentHeight) override;
 #endif
+	bool SupportsPadImageChangeTracking() const override { return true; }
+	void TrackPadImageChanges(LatteTextureView* texView) override;
 	void CreateDescriptorPool();
 	VkDescriptorSet backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter);
 
@@ -605,6 +607,7 @@ private:
 	void CreatePipelineCache();
 	VkPipelineShaderStageCreateInfo CreatePipelineShaderStageCreateInfo(VkShaderStageFlagBits stage, VkShaderModule& module, const char* entryName) const;
 	VkPipeline backbufferBlit_createGraphicsPipeline(VkDescriptorSetLayout descriptorLayout, bool padView, RendererOutputShader* shader);
+	VkPipeline backbufferBlit_createGraphicsPipeline(VkDescriptorSetLayout descriptorLayout, VkRenderPass renderPass, RendererOutputShader* shader, uint64 target);
 	bool AcquireNextSwapchainImage(bool mainWindow);
 	void RecreateSwapchain(bool mainWindow, bool skipCreate = false);
 
@@ -637,6 +640,31 @@ private:
 	std::thread m_pipeline_cache_save_thread;
 	VkPipelineCache m_pipeline_cache{ nullptr };
 	std::unordered_map<uint64, VkPipeline> m_backbufferBlitPipelineCache;
+
+	// hashes 8x8 pixel tiles of the GamePad image on the GPU, which the CPU compares with the previous frame once the GPU is done
+	struct PadChangeTracking
+	{
+		static constexpr uint32 MAX_TILES = 128; // per axis, enough for 1024x1024
+		static constexpr uint32 SLOT_COUNT = 4;
+		static constexpr uint32 SLOT_SIZE = MAX_TILES * MAX_TILES * 4;
+		std::unique_ptr<RendererOutputShader> shader;
+		VkImage image = VK_NULL_HANDLE;
+		VkImageMemAllocation* imageMemory = nullptr;
+		VkImageView imageView = VK_NULL_HANDLE;
+		VkRenderPass renderPass = VK_NULL_HANDLE;
+		VkFramebuffer framebuffer = VK_NULL_HANDLE;
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory bufferMemory = VK_NULL_HANDLE;
+		uint8* bufferPtr = nullptr;
+		std::array<uint64, SLOT_COUNT> slotCommandBufferId{};
+		std::array<uint32, SLOT_COUNT> slotSize{};
+		std::array<bool, SLOT_COUNT> slotPending{};
+		uint32 nextSlot = 0;
+		std::vector<uint8> previousHashes;
+	}m_padChangeTracking;
+	void padChangeTracking_create();
+	void padChangeTracking_destroy();
+	void padChangeTracking_processFinished();
 	std::unordered_map<uint64, VkDescriptorSet> m_backbufferBlitDescriptorSetCache;
 	VkPipelineLayout m_pipelineLayout{nullptr};
 

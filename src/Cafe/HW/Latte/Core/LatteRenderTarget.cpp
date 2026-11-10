@@ -1019,6 +1019,56 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	g_renderer->ImguiEnd();
 }
 
+static std::atomic<LattePadUpdateMode> s_padUpdateMode{LattePadUpdateMode::Full};
+static std::atomic_bool s_padIsMainScreen{false};
+static std::atomic<uint32> s_padLastTouchTick{0};
+static std::atomic<uint32> s_padImageChangeTick{0};
+static std::atomic_bool s_padImageNotPresented{true}; // set when the image changed since it was last presented
+
+void LatteRenderTarget_SetPadUpdatePolicy(LattePadUpdateMode mode, bool padIsMainScreen)
+{
+	s_padUpdateMode = mode;
+	s_padIsMainScreen = padIsMainScreen;
+}
+
+void LatteRenderTarget_NotifyPadTouched()
+{
+	s_padLastTouchTick = GetTickCount();
+}
+
+// called by renderers that track the GamePad image, the detection lags one or two frames behind
+void LatteRenderTarget_NotifyPadImageChanged()
+{
+	s_padImageChangeTick = GetTickCount();
+	s_padImageNotPresented = true;
+}
+
+// the GamePad window stays at full rate while it is the main screen or was touched within the last two seconds
+static bool LatteRenderTarget_ShouldUpdatePadWindow()
+{
+	static uint32 s_lastUpdateTick = 0;
+	const LattePadUpdateMode mode = s_padUpdateMode;
+	if (mode == LattePadUpdateMode::Full)
+		return true;
+	const uint32 currentTick = GetTickCount();
+	const bool focused = s_padIsMainScreen || (currentTick - s_padLastTouchTick) < 2000;
+	// an image that didn't change for half a second and was presented since then doesn't need to be presented again,
+	// except once a second for overlays like the FPS counter that are drawn on top
+	if (!focused && g_renderer->SupportsPadImageChangeTracking() && !s_padImageNotPresented && (currentTick - s_padImageChangeTick) > 500 && (currentTick - s_lastUpdateTick) < 1000)
+		return false;
+	uint32 minInterval = 0;
+	if (!focused && mode == LattePadUpdateMode::Automatic)
+		minInterval = 1000 / 30;
+	else if (!focused && mode == LattePadUpdateMode::Low)
+		minInterval = 1000 / 10;
+	// frames don't arrive exactly on time, a bit of tolerance keeps a 60 FPS game at every second frame instead of every third
+	if ((currentTick - s_lastUpdateTick) + 4 < minInterval)
+		return false;
+	s_lastUpdateTick = currentTick;
+	s_padImageNotPresented = false;
+	return true;
+}
+
 void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uint32 colorBufferWidth, uint32 colorBufferHeight, uint32 colorBufferSliceIndex, uint32 colorBufferFormat, uint32 colorBufferPitch, Latte::E_HWTILEMODE colorBufferTilemode, uint32 colorBufferSwizzle, uint32 renderTarget)
 {
 	cemu_assert_debug(colorBufferSliceIndex == 0); // todo - support for non-zero slice
@@ -1055,7 +1105,12 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 	bool showDRC = swkbd::hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 
 	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
-		LatteRenderTarget_copyToBackbuffer(texView, true);
+	{
+		if (s_padUpdateMode != LattePadUpdateMode::Full)
+			g_renderer->TrackPadImageChanges(texView);
+		if (LatteRenderTarget_ShouldUpdatePadWindow())
+			LatteRenderTarget_copyToBackbuffer(texView, true);
+	}
 	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
 		LatteRenderTarget_copyToBackbuffer(texView, false);
 }

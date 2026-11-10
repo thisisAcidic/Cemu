@@ -7,6 +7,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.common.settings.ExternalDisplayPadScreen
+import info.cemu.cemu.common.settings.GamePadFrameRate
 import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.ui.components.Button
 import info.cemu.cemu.common.ui.components.ScreenContent
@@ -85,7 +86,22 @@ fun GeneralSettingsScreen(
             choiceToString = { externalDisplayPadScreenToString(it) },
             choices = ExternalDisplayPadScreen.entries,
         )
+
+        SingleSelection(
+            label = tr("GamePad screen frame rate"),
+            choice = emulationSettings.gamePadFrameRate,
+            onChoiceChanged = { viewModel.setGamePadFrameRate(it) },
+            choiceToString = { gamePadFrameRateToString(it) },
+            choices = GamePadFrameRate.entries,
+        )
     }
+}
+
+private fun gamePadFrameRateToString(frameRate: GamePadFrameRate) = when (frameRate) {
+    GamePadFrameRate.FULL -> tr("Always full")
+    GamePadFrameRate.STATIC -> tr("Full, paused while the image doesn't change")
+    GamePadFrameRate.AUTOMATIC -> tr("Automatic (30 FPS, paused while the image doesn't change)")
+    GamePadFrameRate.LOW -> tr("Low (10 FPS, paused while the image doesn't change)")
 }
 
 private fun externalDisplayPadScreenToString(screen: ExternalDisplayPadScreen) = when (screen) {

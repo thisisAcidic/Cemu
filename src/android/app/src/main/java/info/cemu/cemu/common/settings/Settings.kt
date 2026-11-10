@@ -16,6 +16,7 @@ data class EmulationSettings(
     val gamePadPosition: GamePadPosition = GamePadPosition.RIGHT,
     val swapScreens: Boolean = false,
     val externalDisplayPadScreen: ExternalDisplayPadScreen = ExternalDisplayPadScreen.SECONDARY,
+    val gamePadFrameRate: GamePadFrameRate = GamePadFrameRate.AUTOMATIC,
 )
 
 @Serializable

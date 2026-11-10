@@ -69,6 +69,7 @@ import info.cemu.cemu.common.android.display.SecondaryDisplays
 import info.cemu.cemu.common.android.display.getSecondaryDisplays
 import info.cemu.cemu.common.android.display.secondaryDisplaysFlow
 import info.cemu.cemu.common.settings.EmulationSettings
+import info.cemu.cemu.common.settings.GamePadFrameRate
 import info.cemu.cemu.common.settings.HotkeyAction
 import info.cemu.cemu.common.ui.extensions.showMessage
 import info.cemu.cemu.common.ui.localization.tr
@@ -450,6 +451,12 @@ private fun EmulationSurfaces(
         externalDisplayPadScreen = emulationSettings.externalDisplayPadScreen,
     )
 
+    // the GamePad is the screen the player looks at when the TV image went to another display
+    val padIsMainScreen = placement.pad == ScreenTarget.Activity && placement.tv is ScreenTarget.Display
+    LaunchedEffect(emulationSettings.gamePadFrameRate, padIsMainScreen) {
+        NativeEmulation.setPadUpdatePolicy(emulationSettings.gamePadFrameRate.toPadUpdateMode(), padIsMainScreen)
+    }
+
     val tv = placement.tv
     if (tv is ScreenTarget.Display) {
         SurfacePresentation(
@@ -642,4 +649,11 @@ private fun EmulationErrorDialog(error: NativeError, onQuit: () -> Unit) {
         confirmButton = { TextButton(onClick = onQuit) { Text(tr("Quit")) } },
         onDismissRequest = {},
     )
+}
+
+private fun GamePadFrameRate.toPadUpdateMode() = when (this) {
+    GamePadFrameRate.FULL -> NativeEmulation.PadUpdateMode.FULL
+    GamePadFrameRate.STATIC -> NativeEmulation.PadUpdateMode.STATIC
+    GamePadFrameRate.AUTOMATIC -> NativeEmulation.PadUpdateMode.AUTOMATIC
+    GamePadFrameRate.LOW -> NativeEmulation.PadUpdateMode.LOW
 }
