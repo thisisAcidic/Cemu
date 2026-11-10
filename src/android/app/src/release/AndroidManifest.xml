@@ -6,5 +6,9 @@
             android:name=".emulation.EmulationActivity"
             android:process=":EmulationProcess"
             tools:node="merge" />
+        <activity
+            android:name=".emulation.EmulationDisplayActivity"
+            android:process=":EmulationProcess"
+            tools:node="merge" />
     </application>
 </manifest>

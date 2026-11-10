@@ -1,12 +1,14 @@
 package info.cemu.cemu.emulation
 
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.view.Display
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -528,22 +530,32 @@ private fun SurfacePresentation(
     holderCallback: SurfaceHolder.Callback,
     onSurfaceChanged: () -> Unit = {},
 ) {
-    val context = LocalContext.current
+    val activity = LocalActivity.current ?: return
     val currentOnSurfaceChanged by rememberUpdatedState(onSurfaceChanged)
+    val canStartActivitiesOnDisplays = remember {
+        activity.packageManager.hasSystemFeature(PackageManager.FEATURE_ACTIVITIES_ON_SECONDARY_DISPLAYS)
+    }
 
-    // presentations stay on their display while the activity is in the background, so only show them while it is started
-    LifecycleStartEffect(displayId, isTV) {
-        val display = context.getSystemService(DisplayManager::class.java).getDisplay(displayId)
-        val presentation = display?.let {
-            EmulationPresentation(context, it, isTV, holderCallback) { currentOnSurfaceChanged() }
-        }
-        try {
-            presentation?.show()
-        } catch (_: WindowManager.InvalidDisplayException) {
-            // the display went away before the presentation could be shown
-        }
-        onStopOrDispose {
-            presentation?.dismiss()
+    // both stay on their display while this activity is in the background, so only show them while it is started
+    LifecycleStartEffect(displayId, isTV, canStartActivitiesOnDisplays) {
+        if (canStartActivitiesOnDisplays) {
+            EmulationDisplays.show(activity, displayId, EmulationDisplays.Content(isTV, holderCallback) { currentOnSurfaceChanged() })
+            onStopOrDispose {
+                EmulationDisplays.hide(displayId)
+            }
+        } else {
+            val display = activity.getSystemService(DisplayManager::class.java).getDisplay(displayId)
+            val presentation = display?.let {
+                EmulationPresentation(activity, it, isTV, holderCallback) { currentOnSurfaceChanged() }
+            }
+            try {
+                presentation?.show()
+            } catch (_: WindowManager.InvalidDisplayException) {
+                // the display went away before the presentation could be shown
+            }
+            onStopOrDispose {
+                presentation?.dismiss()
+            }
         }
     }
 }

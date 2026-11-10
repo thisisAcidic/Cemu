@@ -56,6 +56,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".emulation.EmulationDisplayActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity="${applicationId}.display"
+            android:theme="@style/Theme.EmulationDisplay" />
+
         <provider
             android:name=".provider.DocumentsProvider"
             android:authorities="${applicationId}.provider"
