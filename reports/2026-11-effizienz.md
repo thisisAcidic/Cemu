@@ -421,3 +421,9 @@ Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Buil
 
 - −0,06 W, im Rauschen. Zusammen mit ab1 (−0,12 W) liegt der finale Stand rund 0,1 W unter dem alten, bei gleichen Bildzeiten. Die −0,27 W aus ab1 gegen den Stand nur mit Fixes waren zu optimistisch, weil jene Läufe hoch lagen.
 - Sicher gemessen ist der Effekt auf Cocoon: 0 statt rund 21 Bilder/s und 26–37 % eines Kerns weniger. Ein Leistungsunterschied dieser Größe ist bei ±0,2 W Rauschen durch das Nachladen nur mit mehr Läufen oder im Akkubetrieb sauber zu belegen.
+
+### Schnelle Shader-Multiplikation im Intro
+
+- Unübersprungenes Intro (Ladebildschirm mit drehendem Abzeichen, Zwischensequenzen mit Radio-Untertiteln, Schiff, Chase, Platz mit Menge) mit genauer und mit schneller Multiplikation aufgenommen, die schnelle nach einem Aufwärmlauf für den Shader-Cache.
+- Kein sichtbarer Unterschied. Die Aufnahmen sind um etwa 10 s versetzt, weil die schnelle Variante schneller lädt. Das Abzeichen zeigt in beiden Varianten bronzene Vorder- und silberne Rückseite.
+- Folge: Das mitgelieferte Spielprofil von LCU (EU `0005000010101b00`, USA `0005000010101a00`) setzt `accurateShaderMul = false`, wie Cemu es für Super Mario 3D World, Captain Toad und Xenoblade X tut. Gemessen waren das −0,27 bis −0,39 W im Hafen.
