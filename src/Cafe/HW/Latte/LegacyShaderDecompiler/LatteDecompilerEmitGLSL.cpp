@@ -3789,6 +3789,9 @@ void LatteDecompiler_emitGLSLHelperFunctions(LatteDecompilerShaderContext* shade
 
 		if( LatteGPUState.glVendor == GLVENDOR_NVIDIA && !ActiveSettings::DumpShadersEnabled())
 			fCStr_shaderSource->add("float mul_nonIEEE(float a, float b){return mix(0.0, a*b, (a != 0.0) && (b != 0.0));}" _CRLF); // compiles faster on Nvidia and also results in lower RAM usage (OpenGL)
+		else if (g_renderer->GetType() == RendererAPI::Vulkan)
+			// with both factors clamped to finite values zero times INF gives zero, and the result is a plain multiply the shader compiler can fuse
+			fCStr_shaderSource->add("float mul_nonIEEE(float a, float b){ return clamp(a, -3.40282347E+38, 3.40282347E+38) * clamp(b, -3.40282347E+38, 3.40282347E+38); }" _CRLF);
 		else
 			fCStr_shaderSource->add("float mul_nonIEEE(float a, float b){ if( a == 0.0 || b == 0.0 ) return 0.0; return a*b; }" _CRLF);
 
