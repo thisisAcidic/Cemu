@@ -123,6 +123,7 @@ LatteTextureVk::~LatteTextureVk()
 	cemu_assert_debug(views.empty());
 
 	m_vkr->surfaceCopy_notifyTextureRelease(this);
+	m_vkr->texture_notifyRelease(this);
 
 	VulkanRenderer::GetInstance()->ReleaseDestructibleObject(vkObjTex);
 	vkObjTex = nullptr;

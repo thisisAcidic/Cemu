@@ -1286,6 +1286,11 @@ void VulkanRenderer::draw_setRenderPass()
 	if (m_state.descriptorSetsChanged)
 		sync_inputTexturesChanged();
 
+	std::array<VkClearAttachment, 9> clearAttachments;
+	uint32 clearAttachmentCount = 0;
+	if (!m_texturesWithPendingClear.empty())
+		clearAttachmentCount = draw_takePendingClearsForRenderPass(fboVk, clearAttachments);
+
 	sync_RenderPassLoadTextures(fboVk);
 
 	if (m_featureControl.deviceExtensions.dynamic_rendering)
@@ -1309,6 +1314,13 @@ void VulkanRenderer::draw_setRenderPass()
 	}
 
 	m_state.activeRenderpassFBO = fboVk;
+	if (clearAttachmentCount > 0)
+	{
+		VkClearRect rect{};
+		rect.rect.extent = fboVk->GetExtend();
+		rect.layerCount = 1;
+		vkCmdClearAttachments(m_state.currentCommandBuffer, clearAttachmentCount, clearAttachments.data(), 1, &rect);
+	}
 	if (UseAttachmentFeedbackLoop() && currentSelfDependencyInfo.GetAspectMask() != m_state.feedbackLoopImageAspect)
 	{
 		m_state.feedbackLoopImageAspect = currentSelfDependencyInfo.GetAspectMask();
@@ -1521,6 +1533,8 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance, 
 	m_state.activeGeometryDS = geometryDS;
 	m_state.descriptorSetsChanged = true;
 
+	if (!m_texturesWithPendingClear.empty())
+		draw_flushPendingClearsOfInputTextures();
 	draw_setRenderPass();
 
 	if (m_state.currentPipeline != vkObjPipeline->GetPipeline())

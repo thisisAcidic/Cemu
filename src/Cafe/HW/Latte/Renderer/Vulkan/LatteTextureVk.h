@@ -88,6 +88,16 @@ public:
 	VkImageAspectFlags m_selfDependencyCheckAspectMask{};
 
 	bool m_isAlternateFormat{}; // true if host pixel format does not 1:1 match the emulated guest texture pixel format
+
+	// clear that is applied when the texture is used next, see VulkanRenderer::texture_clearLater
+	struct
+	{
+		bool isPending{};
+		sint32 sliceIndex{};
+		sint32 mipIndex{};
+		VkImageAspectFlags aspectMask{};
+		VkClearValue value{};
+	}m_pendingClear;
 private:
 	class VulkanRenderer* m_vkr{};
 

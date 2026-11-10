@@ -1084,6 +1084,7 @@ void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 {
 	if (!m_screenshot_requested && m_screenshot_state == ScreenshotState::None)
 		return;
+	texture_flushPendingClear(texView->baseTexture);
 
 	if (IsSwapchainInfoValid(false))
 	{
@@ -3408,6 +3409,7 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 
 	auto& chainInfo = GetChainInfo(!padView);
 	LatteTextureViewVk* texViewVk = (LatteTextureViewVk*)texView;
+	texture_flushPendingClear(texView->baseTexture);
 	draw_endRenderPass();
 
 	// barrier for input texture
@@ -3681,14 +3683,13 @@ VkDescriptorSetInfo::~VkDescriptorSetInfo()
 
 void VulkanRenderer::texture_clearSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex)
 {
-	draw_endRenderPass();
 	auto vkTexture = (LatteTextureVk*)hostTexture;
 	if (vkTexture->isDepth)
 		texture_clearDepthSlice(hostTexture, sliceIndex, mipIndex, true, vkTexture->hasStencil, 0.0f, 0);
 	else
 	{
 		cemu_assert_debug(vkTexture->dim != Latte::E_DIM::DIM_3D);
-		ClearColorImage(vkTexture, sliceIndex, mipIndex, { 0,0,0,0 }, vkTexture->GetDefaultLayout());
+		texture_clearColorSlice(hostTexture, sliceIndex, mipIndex, 0.0f, 0.0f, 0.0f, 0.0f);
 	}
 }
 
@@ -3699,13 +3700,19 @@ void VulkanRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 s
 	{
 		cemu_assert_unimplemented();
 	}
+	else if (!vkTexture->isDepth && !vkTexture->IsCompressedFormat())
+	{
+		VkClearValue value{};
+		value.color = {r, g, b, a};
+		texture_clearLater(vkTexture, sliceIndex, mipIndex, VK_IMAGE_ASPECT_COLOR_BIT, value);
+		return;
+	}
+	texture_flushPendingClear(vkTexture);
 	ClearColorImage(vkTexture, sliceIndex, mipIndex, {r, g, b, a}, vkTexture->GetDefaultLayout());
 }
 
 void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue)
 {
-	draw_endRenderPass(); // vkCmdClearDepthStencilImage must not be inside renderpass
-
 	auto vkTexture = (LatteTextureVk*)hostTexture;
 
 	VkImageAspectFlags imageAspect = vkTexture->GetImageAspect();
@@ -3715,6 +3722,144 @@ void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 s
 		aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
 	if (clearStencil && (imageAspect & VK_IMAGE_ASPECT_STENCIL_BIT) != 0)
 		aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	if (aspectMask == 0)
+		return;
+
+	VkClearValue value{};
+	value.depthStencil.depth = depthValue;
+	value.depthStencil.stencil = stencilValue;
+	texture_clearLater(vkTexture, sliceIndex, mipIndex, aspectMask, value);
+}
+
+// the render area must cover the whole slice and the attachment must be the cleared slice and mip
+static bool GetClearAttachment(CachedFBOVk* fboVk, LatteTextureVk* texture, sint32 sliceIndex, sint32 mipIndex, VkImageAspectFlags aspectMask, const VkClearValue& value, VkClearAttachment& attachment)
+{
+	sint32 width, height;
+	texture->GetEffectiveSize(width, height, mipIndex);
+	if (fboVk->GetExtend().width != (uint32)width || fboVk->GetExtend().height != (uint32)height)
+		return false;
+	auto isClearedSlice = [&](LatteTextureView* view) {
+		return view && view->baseTexture == texture && view->firstSlice == sliceIndex && view->firstMip == mipIndex;
+	};
+	if (aspectMask == VK_IMAGE_ASPECT_COLOR_BIT)
+	{
+		for (uint32 i = 0; i < 8; i++)
+		{
+			if (!isClearedSlice(fboVk->colorBuffer[i].texture))
+				continue;
+			attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			attachment.colorAttachment = i;
+			attachment.clearValue = value;
+			return true;
+		}
+		return false;
+	}
+	if (!isClearedSlice(fboVk->depthBuffer.texture))
+		return false;
+	attachment.aspectMask = aspectMask;
+	attachment.colorAttachment = 0;
+	attachment.clearValue = value;
+	return true;
+}
+
+// Tile based GPUs clear inside a render pass without touching memory, while vkCmdClearColorImage and
+// vkCmdClearDepthStencilImage write the whole image and the next render pass loads it again. So clears are
+// remembered and done at the start of the next render pass that renders to the texture. Any other use of the
+// texture applies the clear before that, and a second clear of the same slice replaces the first one
+void VulkanRenderer::texture_clearLater(LatteTextureVk* texture, sint32 sliceIndex, sint32 mipIndex, VkImageAspectFlags aspectMask, const VkClearValue& value)
+{
+	auto& pending = texture->m_pendingClear;
+	if (pending.isPending && (pending.sliceIndex != sliceIndex || pending.mipIndex != mipIndex))
+		texture_flushPendingClear(texture);
+	// attachments of the running render pass have no pending clears, they are cleared right away
+	CachedFBOVk* fboVk = m_state.activeRenderpassFBO;
+	if (fboVk && std::find(fboVk->GetTextures().begin(), fboVk->GetTextures().end(), texture) != fboVk->GetTextures().end())
+	{
+		VkClearAttachment attachment;
+		if (!pending.isPending && GetClearAttachment(fboVk, texture, sliceIndex, mipIndex, aspectMask, value, attachment))
+		{
+			VkClearRect rect{};
+			rect.rect.extent = fboVk->GetExtend();
+			rect.layerCount = 1;
+			vkCmdClearAttachments(m_state.currentCommandBuffer, 1, &attachment, 1, &rect);
+			return;
+		}
+		draw_endRenderPass();
+	}
+	if (!pending.isPending)
+	{
+		pending.isPending = true;
+		pending.sliceIndex = sliceIndex;
+		pending.mipIndex = mipIndex;
+		pending.aspectMask = 0;
+		m_texturesWithPendingClear.emplace_back(texture);
+	}
+	pending.aspectMask |= aspectMask;
+	if (aspectMask & VK_IMAGE_ASPECT_COLOR_BIT)
+		pending.value.color = value.color;
+	if (aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
+		pending.value.depthStencil.depth = value.depthStencil.depth;
+	if (aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT)
+		pending.value.depthStencil.stencil = value.depthStencil.stencil;
+}
+
+void VulkanRenderer::texture_flushPendingClear(LatteTexture* hostTexture)
+{
+	auto vkTexture = (LatteTextureVk*)hostTexture;
+	auto& pending = vkTexture->m_pendingClear;
+	if (!pending.isPending)
+		return;
+	pending.isPending = false;
+	vectorRemoveByValue(m_texturesWithPendingClear, vkTexture);
+	if (pending.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT)
+		ClearColorImage(vkTexture, pending.sliceIndex, pending.mipIndex, pending.value.color, vkTexture->GetDefaultLayout());
+	else
+		texture_clearDepthSliceNow(vkTexture, pending.sliceIndex, pending.mipIndex, pending.aspectMask, pending.value.depthStencil.depth, pending.value.depthStencil.stencil);
+}
+
+void VulkanRenderer::texture_notifyRelease(LatteTextureVk* hostTexture)
+{
+	if (hostTexture->m_pendingClear.isPending)
+		vectorRemoveByValue(m_texturesWithPendingClear, hostTexture);
+}
+
+// a draw samples the textures before the render pass begins, so their clears have to be done outside of it
+void VulkanRenderer::draw_flushPendingClearsOfInputTextures()
+{
+	for (VkDescriptorSetInfo* ds : {m_state.activeVertexDS, m_state.activeGeometryDS, m_state.activePixelDS})
+	{
+		if (!ds)
+			continue;
+		for (LatteTextureVk* texture : ds->list_fboCandidates)
+			texture_flushPendingClear(texture);
+	}
+}
+
+// collects the pending clears that can be done at the start of the render pass, the others are done now
+uint32 VulkanRenderer::draw_takePendingClearsForRenderPass(CachedFBOVk* fboVk, std::array<VkClearAttachment, 9>& attachments)
+{
+	uint32 count = 0;
+	for (LatteTexture* texture : fboVk->GetTextures())
+	{
+		auto vkTexture = (LatteTextureVk*)texture;
+		auto& pending = vkTexture->m_pendingClear;
+		if (!pending.isPending)
+			continue;
+		if (count < attachments.size() && GetClearAttachment(fboVk, vkTexture, pending.sliceIndex, pending.mipIndex, pending.aspectMask, pending.value, attachments[count]))
+		{
+			pending.isPending = false;
+			vectorRemoveByValue(m_texturesWithPendingClear, vkTexture);
+			count++;
+		}
+		else
+			texture_flushPendingClear(vkTexture);
+	}
+	return count;
+}
+
+void VulkanRenderer::texture_clearDepthSliceNow(LatteTextureVk* vkTexture, uint32 sliceIndex, sint32 mipIndex, VkImageAspectFlags aspectMask, float depthValue, uint32 stencilValue)
+{
+	draw_endRenderPass(); // vkCmdClearDepthStencilImage must not be inside renderpass
 
 	auto imageObj = vkTexture->GetImageObj();
 	imageObj->flagForCurrentCommandBuffer();
@@ -3746,6 +3891,7 @@ void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 s
 void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize)
 {
 	auto vkTexture = (LatteTextureVk*)hostTexture;
+	texture_flushPendingClear(vkTexture);
 	auto vkImageObj = vkTexture->GetImageObj();
 	vkImageObj->flagForCurrentCommandBuffer();
 
@@ -3861,6 +4007,8 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 {
 	LatteTextureVk* srcVk = static_cast<LatteTextureVk*>(src);
 	LatteTextureVk* dstVk = static_cast<LatteTextureVk*>(dst);
+	texture_flushPendingClear(srcVk);
+	texture_flushPendingClear(dstVk);
 
 	draw_endRenderPass(); // vkCmdCopyImage must be called outside of a renderpass
 

@@ -48,6 +48,7 @@ void LatteTextureReadbackInfoVk::StartTransfer()
 	region.imageExtent = {region.bufferRowLength, region.bufferImageHeight, 1};
 
 	const auto renderer = VulkanRenderer::GetInstance();
+	renderer->texture_flushPendingClear(baseTexture);
 	renderer->draw_endRenderPass();
 
 	renderer->barrier_image<VulkanRenderer::ANY_TRANSFER | VulkanRenderer::IMAGE_WRITE, VulkanRenderer::TRANSFER_READ>(baseTexture, region.imageSubresource, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
