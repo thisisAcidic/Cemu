@@ -694,7 +694,16 @@ private:
 	std::array<size_t, kCommandBufferPoolSize> m_cmdBufferUniformRingbufIndices {}; // read index in the uniform ringbuffer after the command buffer finishes
 	std::array<VkFence, kCommandBufferPoolSize> m_cmdBufferFences;
 	std::array<VkCommandBuffer, kCommandBufferPoolSize> m_commandBuffers;
-	std::array<VkCommandPool, kCommandBufferPoolSize> m_commandPools{}; // one per command buffer, resetting a whole pool is much cheaper than resetting single command buffers on some drivers
+	std::array<VkCommandPool, kCommandBufferPoolSize> m_commandPools{}; // one per command buffer, so they can be reset on another thread
+	// finished command buffers are reset on a separate thread, resetting is expensive in some drivers
+	void CommandBufferResetThread();
+	void WaitCommandBufferReset(size_t commandBufferIndex);
+	std::thread m_commandBufferResetThread;
+	std::mutex m_commandBufferResetMutex;
+	std::condition_variable m_commandBufferResetCondition;
+	std::vector<size_t> m_commandBuffersToReset;
+	std::array<bool, kCommandBufferPoolSize> m_commandBufferIsReset{};
+	bool m_commandBufferResetThreadStop{};
 	std::array<VkSemaphore, kCommandBufferPoolSize> m_commandBufferSemaphores;
 
 	VkSemaphore GetLastSubmittedCmdBufferSemaphore()

@@ -826,6 +826,8 @@ VulkanRenderer::VulkanRenderer() : Renderer(RendererAPI::Vulkan)
 	QueryAvailableFormats();
 	CreateCommandPool();
 	CreateCommandBuffers();
+	m_commandBufferIsReset.fill(true);
+	m_commandBufferResetThread = std::thread(&VulkanRenderer::CommandBufferResetThread, this);
 	CreateDescriptorPool();
 	swapchain_createDescriptorSetLayout();
 
@@ -889,6 +891,13 @@ VulkanRenderer::~VulkanRenderer()
 	SubmitCommandBuffer();
 	WaitDeviceIdle();
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
+	{
+		std::lock_guard lock(m_commandBufferResetMutex);
+		m_commandBufferResetThreadStop = true;
+	}
+	m_commandBufferResetCondition.notify_all();
+	if (m_commandBufferResetThread.joinable())
+		m_commandBufferResetThread.join();
 	// shut down pipeline save thread
 	m_destructionRequested = true;
 	m_pipeline_cache_semaphore.notify();
@@ -2253,6 +2262,7 @@ void VulkanRenderer::InitFirstCommandBuffer()
 
 	m_state.currentCommandBuffer = m_commandBuffers[m_commandBufferIndex];
 	vkResetFences(m_logicalDevice, 1, &m_cmdBufferFences[m_commandBufferIndex]);
+	WaitCommandBufferReset(m_commandBufferIndex);
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -2272,6 +2282,11 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 		VkResult fenceStatus = vkGetFenceStatus(m_logicalDevice, m_cmdBufferFences[m_commandBufferSyncIndex]);
 		if (fenceStatus == VK_SUCCESS)
 		{
+			{
+				std::lock_guard lock(m_commandBufferResetMutex);
+				m_commandBuffersToReset.emplace_back(m_commandBufferSyncIndex);
+			}
+			m_commandBufferResetCondition.notify_all();
 			ProcessDestructionQueue();
 			m_uniformVarBufferReadIndex = m_cmdBufferUniformRingbufIndices[m_commandBufferSyncIndex];
 			m_commandBufferSyncIndex = (m_commandBufferSyncIndex + 1) % m_commandBuffers.size();
@@ -2291,6 +2306,57 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 	{
 		LatteTextureReadback_UpdateFinishedTransfers(false);
 	}
+}
+
+void VulkanRenderer::CommandBufferResetThread()
+{
+	SetThreadName("vkCmdReset");
+#if BOOST_OS_LINUX
+	// this is light work, keep it on the slowest cores
+	std::vector<uint32> maxFrequencies;
+	while (true)
+	{
+		std::ifstream file(fmt::format("/sys/devices/system/cpu/cpu{}/cpufreq/cpuinfo_max_freq", maxFrequencies.size()));
+		uint32 frequency;
+		if (!(file >> frequency))
+			break;
+		maxFrequencies.emplace_back(frequency);
+	}
+	if (maxFrequencies.size() > 1)
+	{
+		const uint32 slowest = *std::min_element(maxFrequencies.begin(), maxFrequencies.end());
+		cpu_set_t cores;
+		CPU_ZERO(&cores);
+		for (size_t i = 0; i < maxFrequencies.size(); i++)
+		{
+			if (maxFrequencies[i] == slowest)
+				CPU_SET(i, &cores);
+		}
+		sched_setaffinity(0, sizeof(cores), &cores);
+	}
+#endif
+	std::unique_lock lock(m_commandBufferResetMutex);
+	while (true)
+	{
+		m_commandBufferResetCondition.wait(lock, [this] { return m_commandBufferResetThreadStop || !m_commandBuffersToReset.empty(); });
+		if (m_commandBufferResetThreadStop)
+			break;
+		const size_t index = m_commandBuffersToReset.front();
+		m_commandBuffersToReset.erase(m_commandBuffersToReset.begin());
+		lock.unlock();
+		// keeps the memory of the command buffer for reuse
+		vkResetCommandPool(m_logicalDevice, m_commandPools[index], 0);
+		lock.lock();
+		m_commandBufferIsReset[index] = true;
+		m_commandBufferResetCondition.notify_all();
+	}
+}
+
+void VulkanRenderer::WaitCommandBufferReset(size_t commandBufferIndex)
+{
+	std::unique_lock lock(m_commandBufferResetMutex);
+	m_commandBufferResetCondition.wait(lock, [&] { return m_commandBufferIsReset[commandBufferIndex]; });
+	m_commandBufferIsReset[commandBufferIndex] = false;
 }
 
 void VulkanRenderer::WaitForNextFinishedCommandBuffer()
@@ -2372,8 +2438,7 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 
 	m_state.currentCommandBuffer = m_commandBuffers[m_commandBufferIndex];
 	vkResetFences(m_logicalDevice, 1, &m_cmdBufferFences[m_commandBufferIndex]);
-	// keeps the memory of the command buffer for reuse
-	vkResetCommandPool(m_logicalDevice, m_commandPools[m_commandBufferIndex], 0);
+	WaitCommandBufferReset(m_commandBufferIndex);
 
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
