@@ -25,7 +25,7 @@ PROFILE = 'gameProfiles/0005000010101b00.ini'
 SCENE_WINDOW_S = {'harbor': 70, 'intro': 60}
 
 
-def configure(out, driver, patch, cpu):
+def configure(out, driver, patch, cpu, profile=None):
     local = os.path.join(out, 'settings.xml')
     r.adb('shell', 'am', 'force-stop', r.PKG)
     r.adb('pull', '-q', f'{r.FILES}/settings.xml', local)
@@ -42,8 +42,11 @@ def configure(out, driver, patch, cpu):
     s = s.replace(enabled, disabled) if patch == 'off' else s.replace(disabled, enabled)
     open(local, 'w', encoding='utf-8').write(s)
     r.adb('push', '-q', local, f'{r.FILES}/settings.xml')
-    if cpu == 'single':
-        r.adb('shell', f"printf '[CPU]\\ncpuMode = 1\\n' > {r.FILES}/{PROFILE}")
+    ini = '[CPU]\\ncpuMode = 1\\n' if cpu == 'single' else ''
+    if profile:
+        ini += profile.replace('\n', '\\n') + '\\n'
+    if ini:
+        r.adb('shell', f"printf '{ini}' > {r.FILES}/{PROFILE}")
     else:
         r.adb('shell', 'rm', '-f', f'{r.FILES}/{PROFILE}')
     r.adb('shell', f'touch {r.FILES}/frametimes.enable; rm -f {r.FILES}/frametimes.csv')
@@ -98,11 +101,16 @@ def main():
     ap.add_argument('--llvm', action='store_true', help='translate with the LLVM backend (needs an APK built with LLVM_DIR)')
     ap.add_argument('--settle', type=int, metavar='SECONDS', help='harbor: stand still this long before measuring')
     ap.add_argument('--cooldown', type=float, default=50)
+    ap.add_argument('--profile', help='extra game profile lines, e.g. "[Graphics]\\naccurateShaderMul = false"')
+    ap.add_argument('--gputime', action='store_true', help='log the GPU time per render pass (needs an APK with vk.gputime)')
+    ap.add_argument('--offcpu', action='store_true', help='with --perf: also record where threads block (wall clock instead of CPU time)')
+    ap.add_argument('--fresh-spirv', action='store_true', help='compile all shaders from GLSL, the SPIR-V cache is moved aside for the run and restored afterwards')
     args = ap.parse_args()
     out = os.path.join(ROOT, args.name)
     os.makedirs(out, exist_ok=True)
 
-    configure(out, args.driver, args.patch, args.cpu)
+    configure(out, args.driver, args.patch, args.cpu, args.profile)
+    r.adb('shell', f"{'touch' if args.gputime else 'rm -f'} {r.FILES}/vk.gputime")
     r.adb('shell', f"{'touch' if args.jitmap else 'rm -f'} {r.FILES}/jitmap.enable; rm -rf {r.FILES}/jitmap.txt {r.FILES}/dump/recompiler")
     r.adb('shell', f"{'touch' if args.llvm else 'rm -f'} {r.FILES}/llvm.enable")
     thermal = subprocess.Popen([os.path.join(TOOLS, 'thermal_log.sh'), os.path.join(out, 'thermal.csv'), '5'], start_new_session=True)
@@ -116,16 +124,22 @@ def main():
     else:
         cmd += ['--rounds', '5']
     perf = None
+    spirv = f'{r.FILES}/shaderCache/precompiled/0005000010101b00_spirv.bin'
+    if args.fresh_spirv:
+        r.adb('shell', f'mv {spirv} {spirv}.keep')
     repro = subprocess.Popen(cmd)
     if args.perf:
         # start sampling once the sweep is running: wait for the in-game screenshot
         while repro.poll() is None and not os.path.exists(os.path.join(out, 'ingame.png')):
             time.sleep(2)
-        perf = subprocess.run(['adb', 'shell', f'simpleperf record --app {r.PKG} -g --duration {args.perf} -o /data/local/tmp/perf.data'],
+        offcpu = '-e cpu-clock --trace-offcpu ' if args.offcpu else ''
+        perf = subprocess.run(['adb', 'shell', f'simpleperf record --app {r.PKG} {offcpu}-g --duration {args.perf} -o /data/local/tmp/perf.data'],
                               capture_output=True, text=True)
         r.adb('pull', '-q', '/data/local/tmp/perf.data', os.path.join(out, 'perf.data'))
     repro.wait()
     os.killpg(thermal.pid, signal.SIGTERM)
+    if args.fresh_spirv:
+        r.adb('shell', f'mv -f {spirv}.keep {spirv}')
     r.adb('pull', '-q', f'{r.FILES}/frametimes.csv', os.path.join(out, 'frametimes.csv'))
     if args.jitmap:
         r.adb('pull', '-q', f'{r.FILES}/jitmap.txt', os.path.join(out, 'jitmap.txt'))

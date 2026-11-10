@@ -214,3 +214,63 @@ Der Nutzer spielt mit Untertakt über ClusterTune (Mittelkerne 2054 MHz, Prime 2
 - Die GPU ist in der Hafenszene zu 73 % ausgelastet, meist auf 680 MHz, obwohl LCU nativ in 720p rendert. Ein GPU-Limit von 550 MHz kostet 1 FPS. Ursache: zu viele Render-Passes. Adreno lädt bei jedem Pass-Beginn Farbe und Tiefe aus dem Speicher und schreibt sie am Ende zurück.
 - Zählung pro Bild: ~960 Draw-Calls, ~120 Render-Passes. 86 Wechsel des Render-Targets, davon ~39 Teilmenge und ~33 Obermenge des laufenden Passes: Das Spiel wechselt zwischen Draw-Calls mit einem und zwei Farbausgängen, und Cemu baut das Framebuffer nur aus den Ausgängen, die der Pixel-Shader schreibt.
 - Fix: Der laufende Pass bleibt, wenn er alle Attachments des neuen Framebuffers enthält und der Draw-Call keines der übrigen als Textur liest. Farb-Attachments ohne Shader-Ausgang bekommen Schreibmaske 0. Ergebnis: **~60 statt ~120 Render-Passes pro Bild**, Flackertest sauber (895 Bilder, 0 fehlerhaft).
+
+## GPU-Zeit pro Render-Pass (perf/gpu-timing)
+
+- Die GPU ist in der Hafenszene fast voll ausgelastet: 89 % bei 670 MHz (Stock) bzw. 93 % bei 550 MHz (GPU-Limit). Frühere Werte von 73–77 % waren Mittel über den ganzen Lauf inklusive Laden.
+- Messwerkzeug: Zeitstempel (`vkCmdWriteTimestamp`) vor jedem Render-Pass, nach jedem Pass-Ende und um Kopien und Clears herum. Eingeschaltet über die Datei `vk.gputime`, Ausgabe alle 600 Bilder im Log, gruppiert nach Framebuffer (Größe, Formate, Adressen).
+- Hafenszene, System-Treiber, GPU-Limit 550 MHz: **15,1 ms GPU-Zeit pro Bild**:
+
+| ms/Bild | pro Bild | Was |
+|---|---|---|
+| 5,0 | 4,9× | Haupt-Pass 1280×720, drei Farbziele + Tiefe, 535 Draws |
+| **2,6** | **23,6×** | **Farb-Clears (`vkCmdClearColorImage`)** |
+| 1,9 | 12,3× | Pass Farbe 0 + Tiefe, 103 Draws |
+| **0,85** | **12,7×** | **Tiefen-Clears** |
+| 1,0 | 3× | Schattenkarten 960×960 |
+| 0,37 / 0,17 | 1× | Hochskalierung TV (bikubisch, 1920×1080) / GamePad |
+| 0,27 | 2× | Tiefen-Kopie per Draw |
+
+- **Clears kosten 23 % der GPU-Zeit.** Sie laufen außerhalb von Render-Passes, schreiben das ganze Bild in den Speicher, und der nächste Pass lädt es wieder. Auf einer Kachel-GPU kostet ein Clear im Pass fast nichts.
+
+## Verzögerte Clears (perf/deferred-clears)
+
+- Ein Clear wird an der Textur vermerkt statt sofort ausgeführt. Beginnt der nächste Render-Pass, der in die Textur rendert, wird er als `LOAD_OP_CLEAR` dieses Passes ausgeführt (kompatible Render-Pass-Variante, die alten Inhalte werden nicht geladen). Ist die Textur Teil des laufenden Passes, gibt es `vkCmdClearAttachments` im Pass. Jede andere Nutzung führt den Clear vorher aus: Sampeln, Kopien, Uploads, Readback, Präsentieren. Ein zweiter Clear derselben Ebene ersetzt den ersten.
+- Hafen: Pro Bild laufen 18,5 Clears im Render-Pass, 1 separat, und **23 Clears fallen ganz weg**, weil das Spiel dasselbe Ziel vor jeder Nutzung erneut cleart.
+- Flackertest (System-Treiber) beide Stufen sauber: 892 bzw. 891 Bilder, 0 fehlerhaft.
+
+| Lauf | GPU-Zeit/Bild | GPU-Takt (Szene) | GPU-Last | GPU-Arbeit | FPS | p99 |
+|---|---|---|---|---|---|---|
+| r26 Render-Pass-Fix | 15,1 ms | 550 MHz | 92,6 % | 509 Mcyc/s | 59,5 | 20,9 ms |
+| r29 + verzögerte Clears | 13,2 ms | 513 MHz | 78,6 % | 405 Mcyc/s | 59,9 | 18,2 ms |
+| r31 + LOAD_OP_CLEAR | 12,6 ms | 456 MHz | 79,5 % | 363 Mcyc/s | 59,9 | 18,2 ms |
+
+- **GPU-Arbeit −29 %.** Die GPU läuft jetzt meist mit 475 oder 401 MHz statt durchgehend mit 550 MHz. Render-Passes pro Bild: 51 (ursprünglich 120).
+- Leistung am Ladegerät nur als Tendenz: 8,55 → 7,57 W. Saubere Messung bei vollem Akku folgt.
+
+## Genaue Shader-Multiplikation
+
+- LCU nutzt die Voreinstellung „genaue Multiplikation“: `0 × alles = 0` wird bei jeder Multiplikation von Registern geprüft.
+- Komplett ausgeschaltet (Spielprofil): Haupt-Pass 5,1 → 3,9 ms. Achtung: Cemus SPIR-V-Cache berücksichtigt diese Option nicht. Nur Shader, die neu übersetzt werden, ändern sich.
+- Günstigere Prüfung nur des Ergebnisses (`isnan(a*b) ? 0 : a*b`, frischer SPIR-V-Cache): nur −1 %. Der Preis liegt also nicht in den Vergleichen, sondern vermutlich darin, dass Multiplikation und Addition nicht mehr zu FMA verschmolzen werden.
+- Gegenprobe mit frischem SPIR-V-Cache: Ohne genaue Multiplikation sinkt die GPU-Arbeit um 8 % (333 statt 363 Mcyc/s), Haupt-Pass 5,05 → 4,6 ms. Fusioniertes Multiply-Add mit Prüfung (`muladd_nonIEEE`) bringt nichts. Die Prüfung selbst kostet also wenig, ihr Preis liegt in Optimierungen, die der Shader-Compiler nur ohne sie machen kann. **Option für den Nutzer:** Spielprofil `accurateShaderMul = false`, mögliche Bildfehler in einzelnen Szenen, nicht standardmäßig aktiviert. Branch `perf/strict-mul` nicht gemergt.
+
+## Hochskalierung durch den Display-Controller (perf/compositor-scaling)
+
+- Android skaliert eine kleinere Swapchain auf die Fenstergröße. Die Swapchain ist jetzt nur so groß, dass das Spielbild 1:1 hineinpasst: TV 1280×720 statt 1920×1080, GamePad 856×746 statt 1240×1080. Der Compositor skaliert in der Display-Hardware (SurfaceFlinger: „Device“-Komposition für beide Ebenen).
+- Touch-Koordinaten bleiben in Fensterkoordinaten, nur das Zeichnen des Bildes rechnet in Swapchain-Pixeln.
+- Hafen: GPU-Arbeit −5 % (346 statt 363 Mcyc/s), Szene 1,8 °C kühler. Flackertest sauber, Bild im Ausschnittvergleich mit bikubischer GPU-Skalierung praktisch gleich.
+
+## Leistung am Ladegerät bei vollem Akku (10.11., 03:07–03:30)
+
+Hafen, Untertakt (Prime 2093, Mitte 2054 MHz), GPU-Limit 550 MHz, System-Treiber, abwechselnd gemessen. Leistung = USB-Eingang minus Akku-Ladeleistung, Ladeverluste sind enthalten.
+
+| Lauf | Stand | Akku | Leistung | FPS | p99 | CPU max | Szene | GPU-Arbeit |
+|---|---|---|---|---|---|---|---|---|
+| p1-1 | alter dev | 99 % | 8,29 W | 59,2 | 22,9 ms | 74,5 °C | 68,8 °C | 512 Mcyc/s |
+| p1-2 | neuer dev | 99 % | 7,33 W | 59,7 | 19,9 ms | 67,7 °C | 64,1 °C | 379 Mcyc/s |
+| p1-3 | alter dev | 100 % | 8,12 W | 59,1 | 22,7 ms | 76,1 °C | 68,8 °C | |
+| p1-4 | neuer dev | 100 % | **6,69 W** | 59,8 | 18,3 ms | 68,9 °C | 62,8 °C | |
+
+- **−1,2 bis −1,4 W (−15 bis −18 %)**, 4–6 °C kühler, FPS und p99 besser. Neuer dev = Render-Pass-Wiederverwendung + verzögerte Clears mit LOAD_OP_CLEAR + Hochskalierung durch den Display-Controller.
+- Am Ladegerät liegt der Wert rund 0,3 W über der Akkumessung (alter dev: 7,80 W auf Akku, 8,12 W hier). Der neue Stand entspricht damit etwa **6,4 W auf Akku**.
