@@ -31,7 +31,7 @@ In the LEGO City Undercover harbor scene with the 60 FPS graphic pack on the AYN
 
 ## Download
 
-APKs are on the [Releases](https://github.com/thisisAcidic/Cemu/releases) page.
+APKs are on the [Releases](https://github.com/thisisAcidic/Cidemu/releases) page.
 
 ## Getting started
 
@@ -53,7 +53,7 @@ Your saves, graphic packs, game profiles and shader caches can be taken along. B
 
 ## Reporting problems
 
-Open an [issue](https://github.com/thisisAcidic/Cemu/issues/new/choose) and attach the log: *Share log file* in the menu of the game list shares the `log.txt` of the last run. It helps a lot to know whether the same problem happens in the Cemu Android port.
+Open an [issue](https://github.com/thisisAcidic/Cidemu/issues/new/choose) and attach the log: *Share log file* in the menu of the game list shares the `log.txt` of the last run. It helps a lot to know whether the same problem happens in the Cemu Android port.
 
 ## Privacy
 
@@ -61,7 +61,7 @@ Cidemu collects no data and has no analytics. It only goes online when you downl
 
 ## Building
 
-1. `git clone --recursive https://github.com/thisisAcidic/Cemu`
+1. `git clone --recursive https://github.com/thisisAcidic/Cidemu`
 2. Open `src/android` in Android Studio, or run `./gradlew assembleRelease` in `src/android`.
 
 See [BUILD.md](/BUILD.md) for the other platforms Cemu supports. Release APKs are built by the [Cidemu release workflow](/.github/workflows/android_release.yml) when an `android-vX.Y` tag is pushed.

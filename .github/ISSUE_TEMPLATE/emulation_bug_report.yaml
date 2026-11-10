@@ -12,7 +12,7 @@ body:
 
         Please make sure of the following first:
         - You are using the latest Cidemu release (the version is shown under *About Cidemu*)
-        - The problem isn't already on the [issue tracker](https://github.com/thisisAcidic/Cemu/issues)
+        - The problem isn't already on the [issue tracker](https://github.com/thisisAcidic/Cidemu/issues)
         - If you can, check whether the same thing happens in the [Cemu Android port](https://github.com/SSimco/Cemu/releases). That tells us whether it comes from a change in Cidemu
 
         Please don't report Cidemu problems to the Cemu developers, and never attach game files, keys or console files.

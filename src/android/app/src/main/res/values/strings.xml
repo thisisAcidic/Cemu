@@ -3,6 +3,6 @@
     <string name="cemu_original_authors" translatable="false">Exzap, Petergov</string>
     <string name="cemu_android_port_author" translatable="false">SSimco</string>
     <string name="cemu_website" translatable="false">https://cemu.info</string>
-    <string name="cidemu_source_code" translatable="false">https://github.com/thisisAcidic/Cemu</string>
+    <string name="cidemu_source_code" translatable="false">https://github.com/thisisAcidic/Cidemu</string>
     <string name="cemu_online_guide" translatable="false">https://cemu.info/online-guide</string>
 </resources>
