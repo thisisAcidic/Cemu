@@ -611,7 +611,10 @@ void PipelineCompiler::InitBlendState(const LatteContextRegister& latteRegister,
 	uint32 blendEnableMask = colorControlReg.get_BLEND_MASK();
 	uint32 renderTargetMask = latteRegister.CB_TARGET_MASK.get_MASK();
 	// the render pass can have attachments the pixel shader doesn't write, see VulkanRenderer::draw_keepRenderPassForSubset
-	const uint8 pixelOutputMask = pipelineInfo->pixelShader ? pipelineInfo->pixelShader->pixelColorOutputMask : 0;
+	uint8 pixelOutputMask = pipelineInfo->pixelShader ? pipelineInfo->pixelShader->pixelColorOutputMask : 0;
+	// with color output disabled only depth and stencil are written
+	if (colorControlReg.get_SPECIAL_OP() == Latte::LATTE_CB_COLOR_CONTROL::E_SPECIALOP::DISABLE)
+		pixelOutputMask = 0;
 
 	usesBlendConstants = false;
 

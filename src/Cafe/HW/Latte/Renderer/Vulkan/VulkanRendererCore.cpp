@@ -1219,14 +1219,16 @@ void VulkanRenderer::draw_keepRenderPassForSubset()
 	if (running->GetExtend().width != requested->GetExtend().width || running->GetExtend().height != requested->GetExtend().height)
 		return;
 	LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
-	const uint32 pixelOutputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0;
+	uint32 pixelOutputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0;
+	// the pipeline doesn't write color while color output is disabled, see PipelineCompiler::InitBlendState
+	if (LatteGPUState.contextNew.CB_COLOR_CONTROL.get_SPECIAL_OP() == Latte::LATTE_CB_COLOR_CONTROL::E_SPECIALOP::DISABLE)
+		pixelOutputMask = 0;
 	const uint32 renderTargetMask = LatteGPUState.contextNew.CB_TARGET_MASK.get_MASK();
 	for (sint32 i = 0; i < 8; i++)
 	{
 		if (requested->colorBuffer[i].texture && requested->colorBuffer[i].texture != running->colorBuffer[i].texture)
 			return;
 		// the framebuffer drops color buffers the draw still writes to, e.g. when they are smaller than the viewport
-		// or color output is disabled
 		if (running->colorBuffer[i].texture && !requested->colorBuffer[i].texture && (pixelOutputMask & (1 << i)) != 0 && ((renderTargetMask >> (i * 4)) & 0xF) != 0)
 			return;
 	}
