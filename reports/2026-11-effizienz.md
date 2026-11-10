@@ -253,6 +253,7 @@ Der Nutzer spielt mit Untertakt über ClusterTune (Mittelkerne 2054 MHz, Prime 2
 - LCU nutzt die Voreinstellung „genaue Multiplikation“: `0 × alles = 0` wird bei jeder Multiplikation von Registern geprüft.
 - Komplett ausgeschaltet (Spielprofil): Haupt-Pass 5,1 → 3,9 ms. Achtung: Cemus SPIR-V-Cache berücksichtigt diese Option nicht. Nur Shader, die neu übersetzt werden, ändern sich.
 - Günstigere Prüfung nur des Ergebnisses (`isnan(a*b) ? 0 : a*b`, frischer SPIR-V-Cache): nur −1 %. Der Preis liegt also nicht in den Vergleichen, sondern vermutlich darin, dass Multiplikation und Addition nicht mehr zu FMA verschmolzen werden.
+- Bildvergleich im Stand (Flackeraufnahme, frischer Cache): Unterschiede nur auf animierten Elementen (drehende Steine, Figur, HUD, Verkehr), statische Geometrie identisch. Andere Level ungeprüft.
 - Gegenprobe mit frischem SPIR-V-Cache: Ohne genaue Multiplikation sinkt die GPU-Arbeit um 8 % (333 statt 363 Mcyc/s), Haupt-Pass 5,05 → 4,6 ms. Fusioniertes Multiply-Add mit Prüfung (`muladd_nonIEEE`) bringt nichts. Die Prüfung selbst kostet also wenig, ihr Preis liegt in Optimierungen, die der Shader-Compiler nur ohne sie machen kann. **Option für den Nutzer:** Spielprofil `accurateShaderMul = false`, mögliche Bildfehler in einzelnen Szenen, nicht standardmäßig aktiviert. Branch `perf/strict-mul` nicht gemergt.
 
 ## Hochskalierung durch den Display-Controller (perf/compositor-scaling)
@@ -274,3 +275,19 @@ Hafen, Untertakt (Prime 2093, Mitte 2054 MHz), GPU-Limit 550 MHz, System-Treiber
 
 - **−1,2 bis −1,4 W (−15 bis −18 %)**, 4–6 °C kühler, FPS und p99 besser. Neuer dev = Render-Pass-Wiederverwendung + verzögerte Clears mit LOAD_OP_CLEAR + Hochskalierung durch den Display-Controller.
 - Am Ladegerät liegt der Wert rund 0,3 W über der Akkumessung (alter dev: 7,80 W auf Akku, 8,12 W hier). Der neue Stand entspricht damit etwa **6,4 W auf Akku**.
+
+## Turnip V39 (Gen8 V39, Mesa 27.0.0-devel)
+
+- Läuft auf dem Adreno 740, beide Varianten (normal, patched) im Flackertest sauber (898/897 Bilder, 0 fehlerhaft).
+- Mit dem neuen dev: GPU-Thread 57 % statt 73–75 %, GPU-Arbeit 332 statt 357–379 Mcyc/s, GPU meist bei 410 MHz. **Aber nur 57,4 FPS**, nur 35 % der Bilder ≤ 16,7 ms. Leistung 6,81 W gegen 6,69–6,91 W mit System-Treiber, also kein Gewinn.
+- Off-CPU-Profil: Der GPU-Thread ist unter V39 41 % der Zeit nicht auf der CPU (System-Treiber 31 %), mit vielen Pausen von 2–10 ms mitten in Arbeit. Zusätzlich hält die GPU-Taktsteuerung (DCVS) die GPU unter Turnip auf niedrigerem Takt, Bilder mit mehr GPU-Last werden dann zu spät fertig. Der Qualcomm-Treiber gibt der Taktsteuerung offenbar Hinweise, die Turnip fehlen. Ohne Root (Mindesttakt) nicht lösbar. **Empfehlung: System-Treiber.**
+
+## Messung am Ladegerät bei vollem Akku: Vorsicht
+
+- Bei 100 % meldet der Akku „Full“ und `current_now` exakt 0, auch wenn der Lader nachlädt. Derselbe Build schwankte so zwischen 6,46 und 7,20 W, und die Werte driften mit der Zeit nach unten. Belastbar sind nur abwechselnd gemessene Vergleiche (A-B-A-B) und Stellvertreter-Größen: GPU-Arbeit, Thread-Last, Takte, Temperaturen.
+
+## GPU-Thread entlasten (perf/index-cache, perf/async-cmd-reset)
+
+- **Index-Cache:** Hatte 8 Einträge und wurde bei jedem fertigen Command-Buffer geleert, fast jeder Draw wandelte seine Indizes neu um (8 % des GPU-Threads). Jetzt bleiben umgewandelte Indizes über Bilder erhalten. Nach einem GPU-Warten wird ein Eintrag nur wiederverwendet, wenn eine Prüfsumme der Gastdaten gleich ist. Flackertest sauber. A-B-A-B bei vollem Akku: dev2 7,84/7,28 W, Index-Cache 7,20/6,83 W (Drift berücksichtigt etwa −0,1 bis −0,3 W).
+- **Command-Buffer-Reset auf eigenem Thread:** Ein Pool pro Command-Buffer, fertige Buffer setzt ein Thread auf den kleinen Kernen zurück (vorher 6 % des GPU-Threads).
+- **Weniger Submits:** Für jedes geholte Swapchain-Bild (TV, GamePad) gab es einen eigenen Submit, nur um auf das Bild zu warten. Das Warten hängt jetzt am nächsten regulären Submit (Stufe Color-Attachment-Output).

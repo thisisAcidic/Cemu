@@ -52,6 +52,25 @@ def configure(out, driver, patch, cpu, profile=None):
     r.adb('shell', f'touch {r.FILES}/frametimes.enable; rm -f {r.FILES}/frametimes.csv')
 
 
+def power_summary(path, window_s):
+    # input power over USB minus what goes into the battery, from the fast power log
+    if not os.path.exists(path):
+        return {}
+    rows = []
+    for line in open(path).readlines()[1:]:
+        parts = line.strip().split(',')
+        if len(parts) == 5 and all(p.lstrip('-').isdigit() for p in parts[1:]):
+            rows.append((float(parts[0]), *map(int, parts[1:])))
+    if not rows:
+        return {}
+    end = rows[-1][0] - 5
+    scene = [r for r in rows if end - window_s <= r[0] <= end]
+    power = [(r[1] * r[2] - r[3] * r[4]) / 1e12 for r in scene if r[1] > 0]
+    if not power:
+        return {}
+    return {'power_usb_fast_w': sum(power) / len(power), 'power_usb_fast_samples': len(power)}
+
+
 def thermal_summary(path, window_s):
     rows = list(csv.DictReader(line for line in open(path) if not line.startswith('#')))
     if not rows:
@@ -114,6 +133,7 @@ def main():
     r.adb('shell', f"{'touch' if args.jitmap else 'rm -f'} {r.FILES}/jitmap.enable; rm -rf {r.FILES}/jitmap.txt {r.FILES}/dump/recompiler")
     r.adb('shell', f"{'touch' if args.llvm else 'rm -f'} {r.FILES}/llvm.enable")
     thermal = subprocess.Popen([os.path.join(TOOLS, 'thermal_log.sh'), os.path.join(out, 'thermal.csv'), '5'], start_new_session=True)
+    power_log = subprocess.Popen([sys.executable, os.path.join(TOOLS, 'power_log.py'), os.path.join(out, 'power.csv')], start_new_session=True)
     cmd = [sys.executable, os.path.join(TOOLS, 'lcu_repro.py'), '-', out, '--cooldown', str(args.cooldown)]
     if args.settle:
         cmd += ['--settle', str(args.settle)]
@@ -138,6 +158,7 @@ def main():
         r.adb('pull', '-q', '/data/local/tmp/perf.data', os.path.join(out, 'perf.data'))
     repro.wait()
     os.killpg(thermal.pid, signal.SIGTERM)
+    os.killpg(power_log.pid, signal.SIGTERM)
     if args.fresh_spirv:
         r.adb('shell', f'mv -f {spirv}.keep {spirv}')
     r.adb('pull', '-q', f'{r.FILES}/frametimes.csv', os.path.join(out, 'frametimes.csv'))
@@ -151,6 +172,7 @@ def main():
     last = rows[-1]['timestamp_us']
     scene_rows = [row for row in rows if row['timestamp_us'] >= last - window * 1e6]
     summary = {'config': vars(args), 'frames': frametimes.summarize(scene_rows), 'thermal': thermal_summary(os.path.join(out, 'thermal.csv'), window)}
+    summary['thermal'].update(power_summary(os.path.join(out, 'power.csv'), window))
     if perf is not None:
         summary['perf_stderr'] = perf.stderr[-500:]
     json.dump(summary, open(os.path.join(out, 'summary.json'), 'w'), indent=1)
