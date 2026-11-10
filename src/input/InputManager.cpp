@@ -959,8 +959,14 @@ void InputManager::update_thread()
 		}
 		lock.unlock();
 
+#if BOOST_PLAT_ANDROID
+		// Android controllers deliver their state through events and the games read it directly, so this only steps
+		// the GamePad rumble patterns, which advance at 60 Hz. Waking up every millisecond would only cost power
+		std::this_thread::sleep_for(std::chrono::milliseconds(8));
+#else
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		std::this_thread::yield();
+#endif
 	}
 }
 
