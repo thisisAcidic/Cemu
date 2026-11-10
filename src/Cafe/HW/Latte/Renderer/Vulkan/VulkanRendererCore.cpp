@@ -199,7 +199,8 @@ bool VulkanRenderer::IsAsyncPipelineAllowed(uint32 numIndices)
 	if (IsTracingToolEnabled())
 		return false;
 
-	CachedFBOVk* currentFBO = m_state.activeFBO;
+	// judged by the framebuffer the game set, not a larger render pass that was kept for it
+	CachedFBOVk* currentFBO = m_state.requestedFBO ? m_state.requestedFBO : m_state.activeFBO;
 	auto fboExtend = currentFBO->GetExtend();
 
 	if (fboExtend.width == 1600 && fboExtend.height == 1600)
@@ -1204,6 +1205,54 @@ void VulkanRenderer::draw_updateDepthBias(bool forceUpdate)
 
 bool s_syncOnNextDraw = false;
 
+// Games often switch between draws with one and with more color outputs into the same targets. Each switch would end the
+// render pass, and tile based GPUs then store and reload all attachments. If the running render pass already contains
+// every attachment of the requested framebuffer it is kept instead. The pipeline doesn't write color attachments the
+// pixel shader has no output for, and a framebuffer without depth attachment means depth and stencil tests are off.
+void VulkanRenderer::draw_keepRenderPassForSubset()
+{
+	CachedFBOVk* running = m_state.activeRenderpassFBO;
+	CachedFBOVk* requested = m_state.requestedFBO;
+	m_state.activeFBO = requested;
+	if (!running || !requested || running == requested)
+		return;
+	if (running->GetExtend().width != requested->GetExtend().width || running->GetExtend().height != requested->GetExtend().height)
+		return;
+	for (sint32 i = 0; i < 8; i++)
+	{
+		if (requested->colorBuffer[i].texture && requested->colorBuffer[i].texture != running->colorBuffer[i].texture)
+			return;
+	}
+	if (requested->depthBuffer.texture && requested->depthBuffer.texture != running->depthBuffer.texture)
+		return;
+	// the draw must not sample an attachment of the running pass that isn't part of its own framebuffer
+	auto isExtraAttachment = [&](LatteTexture* texture) {
+		for (sint32 i = 0; i < 8; i++)
+		{
+			if (running->colorBuffer[i].texture && !requested->colorBuffer[i].texture && running->colorBuffer[i].texture->baseTexture == texture)
+				return true;
+		}
+		return running->depthBuffer.texture && !requested->depthBuffer.texture && running->depthBuffer.texture->baseTexture == texture;
+	};
+	const std::pair<LatteDecompilerShader*, uint32> stages[] = {
+		{LatteSHRC_GetActiveVertexShader(), LATTE_CEMU_VS_TEX_UNIT_BASE},
+		{LatteSHRC_GetActiveGeometryShader(), LATTE_CEMU_GS_TEX_UNIT_BASE},
+		{LatteSHRC_GetActivePixelShader(), LATTE_CEMU_PS_TEX_UNIT_BASE},
+	};
+	for (const auto& [shader, unitBase] : stages)
+	{
+		if (!shader)
+			continue;
+		for (sint32 z = 0; z < shader->textureUnitListCount; z++)
+		{
+			LatteTextureViewVk* view = m_state.boundTexture[unitBase + shader->textureUnitList[z]];
+			if (view && isExtraAttachment(view->baseTexture))
+				return;
+		}
+	}
+	m_state.activeFBO = running;
+}
+
 void VulkanRenderer::draw_setRenderPass()
 {
 	CachedFBOVk* fboVk = m_state.activeFBO;
@@ -1237,6 +1286,11 @@ void VulkanRenderer::draw_setRenderPass()
 	if (m_state.descriptorSetsChanged)
 		sync_inputTexturesChanged();
 
+	std::array<VkClearAttachment, 9> clearAttachments;
+	uint32 clearAttachmentCount = 0;
+	if (!m_texturesWithPendingClear.empty())
+		clearAttachmentCount = draw_takePendingClearsForRenderPass(fboVk, clearAttachments);
+
 	sync_RenderPassLoadTextures(fboVk);
 
 	if (m_featureControl.deviceExtensions.dynamic_rendering)
@@ -1245,6 +1299,47 @@ void VulkanRenderer::draw_setRenderPass()
 	}
 	else
 	{
+		// pending clears become load operations of the render pass
+		VkClearValue clearValues[9]{};
+		uint32 clearValueCount = 0;
+		if (clearAttachmentCount > 0)
+		{
+			uint32 clearMask = 0;
+			uint32 colorAttachmentCount = 0;
+			for (uint32 i = 0; i < 8; i++)
+			{
+				if (fboVk->colorBuffer[i].texture)
+					colorAttachmentCount++;
+			}
+			for (uint32 i = 0; i < clearAttachmentCount; i++)
+			{
+				const VkClearAttachment& attachment = clearAttachments[i];
+				uint32 attachmentIndex;
+				if (attachment.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT)
+				{
+					clearMask |= 1 << attachment.colorAttachment;
+					attachmentIndex = 0;
+					for (uint32 j = 0; j < attachment.colorAttachment; j++)
+					{
+						if (fboVk->colorBuffer[j].texture)
+							attachmentIndex++;
+					}
+				}
+				else
+				{
+					if (attachment.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
+						clearMask |= 1 << 8;
+					if (attachment.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT)
+						clearMask |= 1 << 9;
+					attachmentIndex = colorAttachmentCount;
+				}
+				clearValues[attachmentIndex] = attachment.clearValue;
+				clearValueCount = std::max(clearValueCount, attachmentIndex + 1);
+			}
+			vkObjRenderPass = fboVk->GetRenderPassObjWithClear(clearMask);
+			clearAttachmentCount = 0;
+		}
+
 		VkRenderPass renderPass = vkObjRenderPass->m_renderPass;
 		VkFramebuffer framebuffer = vkObjFramebuffer->m_frameBuffer;
 		VkExtent2D extend = fboVk->GetExtend();
@@ -1255,11 +1350,19 @@ void VulkanRenderer::draw_setRenderPass()
 		renderPassInfo.framebuffer = framebuffer;
 		renderPassInfo.renderArea.offset = { 0, 0 };
 		renderPassInfo.renderArea.extent = extend;
-		renderPassInfo.clearValueCount = 0;
+		renderPassInfo.clearValueCount = clearValueCount;
+		renderPassInfo.pClearValues = clearValues;
 		vkCmdBeginRenderPass(m_state.currentCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 	}
 
 	m_state.activeRenderpassFBO = fboVk;
+	if (clearAttachmentCount > 0)
+	{
+		VkClearRect rect{};
+		rect.rect.extent = fboVk->GetExtend();
+		rect.layerCount = 1;
+		vkCmdClearAttachments(m_state.currentCommandBuffer, clearAttachmentCount, clearAttachments.data(), 1, &rect);
+	}
 	if (UseAttachmentFeedbackLoop() && currentSelfDependencyInfo.GetAspectMask() != m_state.feedbackLoopImageAspect)
 	{
 		m_state.feedbackLoopImageAspect = currentSelfDependencyInfo.GetAspectMask();
@@ -1365,6 +1468,7 @@ void VulkanRenderer::draw_beginSequence()
 
 void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
 {
+	m_state.activeFBO = m_state.requestedFBO;
 	if (m_state.drawSequenceSkip)
 	{
 		return;
@@ -1451,6 +1555,7 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance, 
 		LatteBufferCache_Sync(indexMax + baseVertex, baseInstance, instanceCount, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, stageUniformModifiedMask);
 	}
 
+	draw_keepRenderPassForSubset();
 	PipelineInfo* pipeline_info = draw_getOrCreateGraphicsPipeline(count);
 	m_state.activePipelineInfo = pipeline_info;
 
@@ -1470,6 +1575,8 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance, 
 	m_state.activeGeometryDS = geometryDS;
 	m_state.descriptorSetsChanged = true;
 
+	if (!m_texturesWithPendingClear.empty())
+		draw_flushPendingClearsOfInputTextures();
 	draw_setRenderPass();
 
 	if (m_state.currentPipeline != vkObjPipeline->GetPipeline())

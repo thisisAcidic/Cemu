@@ -320,6 +320,10 @@ public:
 	void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) override;
 	LatteTextureReadbackInfo* texture_createReadback(LatteTextureView* textureView) override;
 
+	// clears are delayed until the texture is used, see texture_clearLater
+	void texture_flushPendingClear(LatteTexture* hostTexture);
+	void texture_notifyRelease(LatteTextureVk* hostTexture);
+
 	// surface copy
 	void surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* sourceTexture, sint32 srcMip, sint32 srcSlice, LatteTexture* destinationTexture, sint32 dstMip, sint32 dstSlice, sint32 width, sint32 height) override;
 	void surfaceCopy_notifyTextureRelease(LatteTextureVk* hostTexture);
@@ -328,6 +332,12 @@ public:
 	void surfaceCopy_viaDrawcall(LatteTextureVk* srcTextureVk, sint32 texSrcMip, sint32 texSrcSlice, LatteTextureVk* dstTextureVk, sint32 texDstMip, sint32 texDstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight);
 
 	void surfaceCopy_cleanup();
+
+	void texture_clearLater(LatteTextureVk* texture, sint32 sliceIndex, sint32 mipIndex, VkImageAspectFlags aspectMask, const VkClearValue& value);
+	void texture_clearDepthSliceNow(LatteTextureVk* texture, uint32 sliceIndex, sint32 mipIndex, VkImageAspectFlags aspectMask, float depthValue, uint32 stencilValue);
+	void draw_flushPendingClearsOfInputTextures();
+	uint32 draw_takePendingClearsForRenderPass(CachedFBOVk* fboVk, std::array<VkClearAttachment, 9>& attachments);
+	std::vector<LatteTextureVk*> m_texturesWithPendingClear;
 
 private:
 	uint64 copySurface_getPipelineStateHash(struct VkCopySurfaceState_t& state);
@@ -374,6 +384,7 @@ private:
 
 		// rendertarget
 		CachedFBOVk* activeFBO{}; // the FBO active for the emulated GPU
+		CachedFBOVk* requestedFBO{}; // the FBO the emulated GPU set, activeFBO can be a running render pass that contains all of its attachments
 
 		// command buffer
 		VkCommandBuffer currentCommandBuffer{};
@@ -559,6 +570,7 @@ private:
 
 	void draw_setRenderPass();
 	void draw_endRenderPass();
+	void draw_keepRenderPassForSubset();
 
 	void draw_beginSequence() override;
 	void draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext) override;

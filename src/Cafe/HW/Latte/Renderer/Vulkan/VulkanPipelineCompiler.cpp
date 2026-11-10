@@ -610,6 +610,8 @@ void PipelineCompiler::InitBlendState(const LatteContextRegister& latteRegister,
 	const Latte::LATTE_CB_COLOR_CONTROL& colorControlReg = latteRegister.CB_COLOR_CONTROL;
 	uint32 blendEnableMask = colorControlReg.get_BLEND_MASK();
 	uint32 renderTargetMask = latteRegister.CB_TARGET_MASK.get_MASK();
+	// the render pass can have attachments the pixel shader doesn't write, see VulkanRenderer::draw_keepRenderPassForSubset
+	const uint8 pixelOutputMask = pipelineInfo->pixelShader ? pipelineInfo->pixelShader->pixelColorOutputMask : 0;
 
 	usesBlendConstants = false;
 
@@ -630,6 +632,8 @@ void PipelineCompiler::InitBlendState(const LatteContextRegister& latteRegister,
 		const auto& blendControlReg = latteRegister.CB_BLENDN_CONTROL[i];
 
 		entry.colorWriteMask = (renderTargetMask >> (i * 4)) & 0xF;
+		if ((pixelOutputMask & (1 << i)) == 0)
+			entry.colorWriteMask = 0;
 		entry.colorBlendOp = GetVkBlendOp(blendControlReg.get_COLOR_COMB_FCN());
 		entry.srcColorBlendFactor = GetVkBlendFactor(blendControlReg.get_COLOR_SRCBLEND());
 		entry.dstColorBlendFactor = GetVkBlendFactor(blendControlReg.get_COLOR_DSTBLEND());
