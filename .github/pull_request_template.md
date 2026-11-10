@@ -1,1 +1,1 @@
-Before submitting a pull request, please read and follow our [contribution guidelines](https://github.com/cemu-project/Cemu/blob/main/CONTRIBUTING.md).
+Before submitting a pull request, please read the [contribution guidelines](/CONTRIBUTING.md) and the [coding style](/CODING_STYLE.md). Changes that aren't specific to Android are best proposed to [Cemu](https://github.com/cemu-project/Cemu) as well, so every platform gets them.

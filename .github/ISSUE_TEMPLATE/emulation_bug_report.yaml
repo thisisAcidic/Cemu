@@ -1,6 +1,6 @@
 # Docs - https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-githubs-form-schema
 name: Bug Report
-description: Report an issue with Cemu emulator
+description: Report an issue with Cidemu
 title: "Enter a title for the bug report here"
 labels: bug
 body:
@@ -9,14 +9,13 @@ body:
     attributes:
       value: |
         ## Important: Read First
-        
-        If you discovered a bug you can report it here. Please make sure of the following first:
-        - That you are using the latest version of Cemu
-        - Only report something if you are sure it's a bug and not any technical issue on your end. For troubleshooting help see the [links page](https://github.com/cemu-project/Cemu#links)
-        - Problems specific to a single game should be reported on the [compatibility wiki](https://wiki.cemu.info/wiki/Main_Page) instead
-        - Verify that your problem isn't already mentioned on the [issue tracker](https://github.com/cemu-project/Cemu/issues)
-        
-        Additionally, be aware that graphic packs can also causes issues. There is a separate issue tracker for graphic pack bugs over at the [graphic pack repository](https://github.com/cemu-project/cemu_graphic_packs)
+
+        Please make sure of the following first:
+        - You are using the latest Cidemu release (the version is shown under *About Cidemu*)
+        - The problem isn't already on the [issue tracker](https://github.com/thisisAcidic/Cemu/issues)
+        - If you can, check whether the same thing happens in the [Cemu Android port](https://github.com/SSimco/Cemu/releases). That tells us whether it comes from a change in Cidemu
+
+        Please don't report Cidemu problems to the Cemu developers, and never attach game files, keys or console files.
   - type: textarea
     id: current_behavior
     attributes:
@@ -31,32 +30,40 @@ body:
       description: "What did you expect to happen?"
     validations:
       required: true
-
   - type: textarea
     id: steps_to_reproduce
     attributes:
       label: Steps to Reproduce
-      description: "How to reproduce the issue"
+      description: "How to reproduce the issue, including the game, its region and update version if it is game specific"
+    validations:
+      required: true
+  - type: dropdown
+    id: cemu_android_port
+    attributes:
+      label: Does it happen in the Cemu Android port too?
+      options:
+        - Not tested
+        - "Yes"
+        - "No, only in Cidemu"
     validations:
       required: true
   - type: textarea
-    id: sys_info
+    id: device_info
     attributes:
-      label: System Info (Optional)
-      description: "Your PC specifications. Usually only the operating system and graphics card is important. But feel free to add more info."
-      placeholder: |
-        Info        
-        OS: Windows 10
-        GPU: NVIDIA GeForce RTX 4090
+      label: Device
+      description: "Device, Android version and GPU driver. The driver is either the system driver or the custom driver selected in the graphics settings."
       value: |
-        OS: 
-        GPU: 
+        Device:
+        Android version:
+        GPU driver:
+    validations:
+      required: true
   - type: textarea
     id: emulation_settings
     attributes:
       label: Emulation Settings (Optional)
       description: |
-        Any non-default settings. You can leave this empty if you didn't change anything other than input settings.
+        Any non-default settings and active graphic packs. You can leave this empty if you didn't change anything other than input settings.
     validations:
       required: false
   - type: textarea
@@ -64,6 +71,6 @@ body:
     attributes:
       label: "Logs (Optional)"
       description: |
-        "Attach `log.txt` from your Cemu folder (*File > Open Cemu folder*)".
+        Attach `log.txt` from right after the problem happened, via *Share log file* in the menu of the game list.
     validations:
       required: false

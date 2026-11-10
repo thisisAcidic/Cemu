@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Cemu Discord
-    url: https://discord.com/invite/5psYsup
-    about: If you need technical support with Cemu or have other questions the best place to ask is on the official Cemu Discord linked here
+  - name: Cemu compatibility wiki
+    url: https://wiki.cemu.info/wiki/Main_Page
+    about: Known problems of individual games in Cemu. Cidemu shares the emulation core, so most of it applies here too.
