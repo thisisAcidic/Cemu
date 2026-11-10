@@ -146,6 +146,12 @@ namespace NativeInput
 } // namespace NativeInput
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeInput_setUpdatesPaused([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean paused)
+{
+	InputManager::instance().SetUpdatesPaused(paused);
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeInput_onControllerKey(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring deviceDescriptor, jint key, jboolean is_pressed)
 {
 	ControllerManager::instance().process_key_event(JNIUtils::FromJString(env, deviceDescriptor), key, is_pressed);

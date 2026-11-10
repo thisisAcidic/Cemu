@@ -940,6 +940,11 @@ void InputManager::update_thread()
 	SetThreadName("Input_update");
 	while (!m_update_thread_shutdown.load(std::memory_order::relaxed))
 	{
+		{
+			std::unique_lock pauseLock(m_pause_mutex);
+			m_pause_condition.wait(pauseLock, [this] { return !m_updates_paused || m_update_thread_shutdown; });
+		}
+
 		std::shared_lock lock(m_mutex);
 		for (auto& pad : m_vpad)
 		{
@@ -959,9 +964,22 @@ void InputManager::update_thread()
 	}
 }
 
+void InputManager::SetUpdatesPaused(bool paused)
+{
+	{
+		std::scoped_lock lock(m_pause_mutex);
+		m_updates_paused = paused;
+	}
+	m_pause_condition.notify_all();
+}
+
 void InputManager::Shutdown()
 {
-    m_update_thread_shutdown = true;
+    {
+        std::scoped_lock lock(m_pause_mutex);
+        m_update_thread_shutdown = true;
+    }
+    m_pause_condition.notify_all();
 
     if (m_update_thread.joinable())
     {

@@ -27,6 +27,8 @@
 
 #include "util/helpers/Singleton.h"
 
+#include <condition_variable>
+
 class InputManager : public Singleton<InputManager>
 {
 	friend class Singleton<InputManager>;
@@ -99,11 +101,17 @@ public:
 
 	std::atomic<float> m_mouse_wheel;
 
+	// stops polling the controllers while nothing in this process uses them
+	void SetUpdatesPaused(bool paused);
+
 private:
 	void update_thread();
 
 	std::thread m_update_thread;
 	std::atomic<bool> m_update_thread_shutdown{false};
+	std::mutex m_pause_mutex;
+	std::condition_variable m_pause_condition;
+	bool m_updates_paused = false;
 
 	std::array<std::vector<ControllerProviderPtr>, InputAPI::MAX> m_api_available{ };
 

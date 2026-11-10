@@ -1,6 +1,8 @@
 package info.cemu.cemu
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import info.cemu.cemu.common.android.context.internalFolder
 import info.cemu.cemu.common.settings.AppSettingsStore
 import info.cemu.cemu.common.ui.localization.setLanguage
@@ -11,6 +13,7 @@ import info.cemu.cemu.nativeinterface.NativeActiveSettings.setNativeLibDir
 import info.cemu.cemu.nativeinterface.NativeEmulation.initializeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.setDPI
 import info.cemu.cemu.nativeinterface.NativeFiles
+import info.cemu.cemu.nativeinterface.NativeInput
 import info.cemu.cemu.nativeinterface.NativeGraphicPacks.refreshGraphicPacks
 import info.cemu.cemu.nativeinterface.NativeLogging.crashLog
 import info.cemu.cemu.nativeinterface.NativeSwkbd.initializeSwkbd
@@ -38,6 +41,34 @@ class CemuApplication : Application() {
         initializeCemu()
 
         saveDataFiles()
+
+        pauseInputWhileInBackground()
+    }
+
+    // Every process of the app polls the controllers. The release build runs the emulation in its own process, so
+    // without this the process of the game list kept polling a thousand times per second while a game runs.
+    private fun pauseInputWhileInBackground() {
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            private var startedActivities = 0
+
+            override fun onActivityStarted(activity: Activity) {
+                if (startedActivities++ == 0) {
+                    NativeInput.setUpdatesPaused(false)
+                }
+            }
+
+            override fun onActivityStopped(activity: Activity) {
+                if (--startedActivities == 0) {
+                    NativeInput.setUpdatesPaused(true)
+                }
+            }
+
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
     }
 
     private fun initializeTranslations() {

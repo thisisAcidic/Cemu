@@ -138,6 +138,9 @@ object NativeInput {
     const val MAX_WPAD_CONTROLLERS: Int = 7
 
     @JvmStatic
+    external fun setUpdatesPaused(paused: Boolean)
+
+    @JvmStatic
     external fun onControllerKey(
         deviceDescriptor: String,
         key: Int,
