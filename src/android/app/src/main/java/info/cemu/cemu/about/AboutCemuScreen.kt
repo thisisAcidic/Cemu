@@ -6,20 +6,25 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -47,6 +52,7 @@ typealias AboutLibrary = com.mikepenz.aboutlibraries.entity.Library
 @Composable
 fun AboutCemuScreen(navigateBack: () -> Unit) {
     var openLicenseDialog by remember { mutableStateOf<AboutLibrary?>(null) }
+    var showNativeLicenses by remember { mutableStateOf(false) }
     val libraries by produceLibraries(R.raw.aboutlibraries)
 
     ScreenContentLazy(
@@ -59,11 +65,15 @@ fun AboutCemuScreen(navigateBack: () -> Unit) {
     ) {
         aboutCemuSection()
         disclaimerSection()
-        nativeLibrariesSection()
+        nativeLibrariesSection(onShowLicenses = { showNativeLicenses = true })
         kotlinLibrariesSection(
             libraries = libraries,
             onOpenLicense = { lib -> openLicenseDialog = lib },
         )
+    }
+
+    if (showNativeLicenses) {
+        NativeLicensesDialog(onDismiss = { showNativeLicenses = false })
     }
 
     openLicenseDialog?.let { library ->
@@ -126,7 +136,7 @@ private fun LazyListScope.disclaimerSection() {
     }
 }
 
-private fun LazyListScope.nativeLibrariesSection() {
+private fun LazyListScope.nativeLibrariesSection(onShowLicenses: () -> Unit) {
     item {
         AboutSection {
             Text(
@@ -135,6 +145,9 @@ private fun LazyListScope.nativeLibrariesSection() {
             )
             UsedLibraries.forEach {
                 Library(it)
+            }
+            TextButton(onClick = onShowLicenses) {
+                Text(tr("Show licenses"))
             }
         }
     }
@@ -204,6 +217,31 @@ private fun Link(url: String) {
                 append(url)
             }
         }
+    )
+}
+
+@Composable
+private fun NativeLicensesDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    // written by src/android/scripts/collect_licenses.py, split up so the list only lays out what is visible
+    val paragraphs = remember {
+        context.assets.open("licenses/native.txt").bufferedReader().use { it.readText() }.split("\n\n")
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("OK")) } },
+        title = { Text(tr("Licenses")) },
+        text = {
+            LazyColumn(modifier = Modifier.fillMaxHeight(0.8f)) {
+                items(paragraphs) { paragraph ->
+                    Text(
+                        text = paragraph,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+            }
+        },
     )
 }
 
