@@ -1693,23 +1693,37 @@ void _emitALUOP3InstructionCode(LatteDecompilerShaderContext* shaderContext, Lat
 		if (aluInstruction->opcode == ALU_OP3_INST_MULADD_IEEE)
 			useDefaultMul = true;
 
-		if (shaderContext->options->strictMul && useDefaultMul == false)
+		if (shaderContext->options->strictMul && useDefaultMul == false && g_renderer->GetType() == RendererAPI::Vulkan)
 		{
-			src->add("mul_nonIEEE(");
+			// keeps multiply and add together so the shader compiler can fuse them
+			src->add("muladd_nonIEEE(");
 			_emitOperandInputCode(shaderContext, aluInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
 			src->add(",");
 			_emitOperandInputCode(shaderContext, aluInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+			src->add(",");
+			_emitOperandInputCode(shaderContext, aluInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
 			src->add(")");
 		}
 		else
 		{
-			_emitOperandInputCode(shaderContext, aluInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
-			src->add(" * ");
-			_emitOperandInputCode(shaderContext, aluInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
-		}
+			if (shaderContext->options->strictMul && useDefaultMul == false)
+			{
+				src->add("mul_nonIEEE(");
+				_emitOperandInputCode(shaderContext, aluInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+				src->add(",");
+				_emitOperandInputCode(shaderContext, aluInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+				src->add(")");
+			}
+			else
+			{
+				_emitOperandInputCode(shaderContext, aluInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+				src->add(" * ");
+				_emitOperandInputCode(shaderContext, aluInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+			}
 
-		src->add(" + ");
-		_emitOperandInputCode(shaderContext, aluInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
+			src->add(" + ");
+			_emitOperandInputCode(shaderContext, aluInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
+		}
 		if(aluInstruction->opcode != ALU_OP3_INST_MULADD)
 			src->add(")");
 		if( aluInstruction->opcode == ALU_OP3_INST_MULADD_D2 )
@@ -3790,8 +3804,12 @@ void LatteDecompiler_emitGLSLHelperFunctions(LatteDecompilerShaderContext* shade
 		if( LatteGPUState.glVendor == GLVENDOR_NVIDIA && !ActiveSettings::DumpShadersEnabled())
 			fCStr_shaderSource->add("float mul_nonIEEE(float a, float b){return mix(0.0, a*b, (a != 0.0) && (b != 0.0));}" _CRLF); // compiles faster on Nvidia and also results in lower RAM usage (OpenGL)
 		else if (g_renderer->GetType() == RendererAPI::Vulkan)
+		{
 			// a NaN product means one factor was zero and the other INF or NaN. Unlike the hardware this also turns NaN times non-zero into zero
 			fCStr_shaderSource->add("float mul_nonIEEE(float a, float b){ float r = a*b; return isnan(r) ? 0.0 : r; }" _CRLF);
+			// same for multiply-add, where INF products plus -INF also give c
+			fCStr_shaderSource->add("float muladd_nonIEEE(float a, float b, float c){ float r = a*b+c; return isnan(r) ? c : r; }" _CRLF);
+		}
 		else
 			fCStr_shaderSource->add("float mul_nonIEEE(float a, float b){ if( a == 0.0 || b == 0.0 ) return 0.0; return a*b; }" _CRLF);
 
