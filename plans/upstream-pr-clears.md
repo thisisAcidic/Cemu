@@ -1,5 +1,10 @@
 # Entwurf: PR an cemu-project/Cemu „Vulkan: Clear render targets inside render passes“
 
+> **Wichtig (2026-11-10):** Cemus `CONTRIBUTING.md` verlangt für neue Beitragende, dass der Code von einem Menschen
+> geschrieben ist (KI nur für Planung, Design, Review und Fragen, kein umformulierter KI-Code). Diese Commits sind
+> KI-geschrieben und dürfen deshalb nicht als PR eingereicht werden. Stattdessen die Befunde (Messungen, Ursachen,
+> Ansatz) als Issue oder Diskussion bei Cemu teilen, oder der Nutzer schreibt die Änderungen selbst.
+
 Branch `upstream/vk-clears-in-renderpass` (lokal, auf `cemu/main`), 7 Commits, konfliktfrei übernommen. Nicht gepusht, kein PR eröffnet.
 
 Vor dem PR noch nötig:
