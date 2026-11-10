@@ -411,3 +411,13 @@ Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Buil
 - Display-Activity: −0,27 W gegenüber den Fixes allein, Cocoon zeichnet 0 statt rund 21 Bilder/s.
 - Die Fixes liegen bei gleicher GPU-Arbeit und gleichen Thread-Lasten 0,15 W über dem alten Stand. Keinem Thread zuzuordnen, vermutlich Rauschen der versteckten Akku-Nachladung (Akku „voll“, 0 mA).
 - Absolutwerte liegen an diesem Nachmittag rund 0,3 W über denen vom Vormittag (gleiches APK). Nur Vergleiche innerhalb einer Reihe zählen.
+
+### Messreihe fin1: finaler Stand gegen alten Stand
+
+| Stand | Leistung | GPU-Arbeit | FPS | p99 |
+|---|---|---|---|---|
+| final (Fixes, Display-Activity, Controller-Abfrage) | 6,70 / 6,85 W (6,78) | 199 / 170 | 59,9 | 18,1 ms |
+| alter Stand | 6,82 / 6,85 W (6,84) | 180 / 183 | 59,9 | 18,0–18,1 ms |
+
+- −0,06 W, im Rauschen. Zusammen mit ab1 (−0,12 W) liegt der finale Stand rund 0,1 W unter dem alten, bei gleichen Bildzeiten. Die −0,27 W aus ab1 gegen den Stand nur mit Fixes waren zu optimistisch, weil jene Läufe hoch lagen.
+- Sicher gemessen ist der Effekt auf Cocoon: 0 statt rund 21 Bilder/s und 26–37 % eines Kerns weniger. Ein Leistungsunterschied dieser Größe ist bei ±0,2 W Rauschen durch das Nachladen nur mit mehr Läufen oder im Akkubetrieb sauber zu belegen.
