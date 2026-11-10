@@ -437,3 +437,4 @@ Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Buil
 - About: Credits, Quellcode-Link und Lizenzdialog der nativen Bibliotheken.
 - Leere Spieleliste ohne Spielpfad: Hinweis mit Knopf zu den Einstellungen.
 - Controller-Abfrage: Prozess der Spieleliste 0 Ticks während des Spiels, Emulationsprozess 3 Ticks in 10 s.
+- Command-Pools ohne `TRANSIENT_BIT` (Branch `exp/pool-not-transient`, lokal): Reset-Thread 234 statt 220 Ticks in 20 s im Hafen, also kein Gewinn. Verworfen. Der Thread braucht rund 11 % eines kleinen Kerns.
