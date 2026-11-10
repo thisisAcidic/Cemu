@@ -638,7 +638,6 @@ private:
 	std::unordered_map<uint64, VkPipeline> m_backbufferBlitPipelineCache;
 	std::unordered_map<uint64, VkDescriptorSet> m_backbufferBlitDescriptorSetCache;
 	VkPipelineLayout m_pipelineLayout{nullptr};
-	VkCommandPool m_commandPool{ nullptr };
 
 	// buffer to cache uniform vars
 	VkBuffer m_uniformVarBuffer = VK_NULL_HANDLE;
@@ -695,6 +694,7 @@ private:
 	std::array<size_t, kCommandBufferPoolSize> m_cmdBufferUniformRingbufIndices {}; // read index in the uniform ringbuffer after the command buffer finishes
 	std::array<VkFence, kCommandBufferPoolSize> m_cmdBufferFences;
 	std::array<VkCommandBuffer, kCommandBufferPoolSize> m_commandBuffers;
+	std::array<VkCommandPool, kCommandBufferPoolSize> m_commandPools{}; // one per command buffer, resetting a whole pool is much cheaper than resetting single command buffers on some drivers
 	std::array<VkSemaphore, kCommandBufferPoolSize> m_commandBufferSemaphores;
 
 	VkSemaphore GetLastSubmittedCmdBufferSemaphore()

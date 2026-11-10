@@ -962,8 +962,12 @@ VulkanRenderer::~VulkanRenderer()
 	if (m_pipelineLayout != VK_NULL_HANDLE)
 		vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
 
-	if (m_commandPool != VK_NULL_HANDLE)
-		vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
+	for (VkCommandPool& commandPool : m_commandPools)
+	{
+		if (commandPool != VK_NULL_HANDLE)
+			vkDestroyCommandPool(m_logicalDevice, commandPool, nullptr);
+		commandPool = VK_NULL_HANDLE;
+	}
 
 	VKRObjectSampler::DestroyCache();
 
@@ -1773,11 +1777,14 @@ void VulkanRenderer::CreateCommandPool()
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = m_indices.graphicsFamily;
-	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
-	VkResult result = vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &m_commandPool);
-	if (result != VK_SUCCESS)
-		throw std::runtime_error(fmt::format("Failed to create command pool: {}", result));
+	for (VkCommandPool& commandPool : m_commandPools)
+	{
+		VkResult result = vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &commandPool);
+		if (result != VK_SUCCESS)
+			throw std::runtime_error(fmt::format("Failed to create command pool: {}", result));
+	}
 }
 
 void VulkanRenderer::CreateCommandBuffers()
@@ -1794,17 +1801,20 @@ void VulkanRenderer::CreateCommandBuffers()
 		vkCreateFence(m_logicalDevice, &fenceInfo, nullptr, &*it);
 	}
 
-	VkCommandBufferAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = m_commandPool;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = (uint32_t)m_commandBuffers.size();
-
-	const VkResult result = vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, m_commandBuffers.data());
-	if (result != VK_SUCCESS)
+	for (size_t i = 0; i < m_commandBuffers.size(); i++)
 	{
-		cemuLog_log(LogType::Force, "Failed to allocate command buffers: {}", result);
-		throw std::runtime_error(fmt::format("Failed to allocate command buffers: {}", result));
+		VkCommandBufferAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.commandPool = m_commandPools[i];
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocInfo.commandBufferCount = 1;
+
+		const VkResult result = vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, &m_commandBuffers[i]);
+		if (result != VK_SUCCESS)
+		{
+			cemuLog_log(LogType::Force, "Failed to allocate command buffers: {}", result);
+			throw std::runtime_error(fmt::format("Failed to allocate command buffers: {}", result));
+		}
 	}
 
 	for (auto& semItr : m_commandBufferSemaphores)
@@ -2362,7 +2372,8 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 
 	m_state.currentCommandBuffer = m_commandBuffers[m_commandBufferIndex];
 	vkResetFences(m_logicalDevice, 1, &m_cmdBufferFences[m_commandBufferIndex]);
-	vkResetCommandBuffer(m_state.currentCommandBuffer, 0);
+	// keeps the memory of the command buffer for reuse
+	vkResetCommandPool(m_logicalDevice, m_commandPools[m_commandBufferIndex], 0);
 
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
