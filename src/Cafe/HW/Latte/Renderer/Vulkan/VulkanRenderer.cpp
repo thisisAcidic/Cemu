@@ -4503,7 +4503,7 @@ void VKRObjectSampler::DestroyCache()
 	s_samplerCache.clear();
 }
 
-VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint32 colorAttachmentCount)
+VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint32 colorAttachmentCount, uint32 clearMask)
 {
 	VulkanRenderer* vkRenderer = VulkanRenderer::GetInstance();
 	bool useAttachmentFeedbackLoop = vkRenderer->UseAttachmentFeedbackLoop();
@@ -4547,7 +4547,7 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 		VkAttachmentDescription entry{};
 		entry.format = attachmentInfo.colorAttachment[i].format;
 		entry.samples = VK_SAMPLE_COUNT_1_BIT;
-		entry.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		entry.loadOp = (clearMask & (1 << i)) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 		entry.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		entry.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		entry.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -4575,11 +4575,11 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 		VkAttachmentDescription entry{};
 		entry.format = attachmentInfo.depthAttachment.format;
 		entry.samples = VK_SAMPLE_COUNT_1_BIT;
-		entry.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		entry.loadOp = (clearMask & (1 << 8)) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 		entry.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		if (attachmentInfo.depthAttachment.hasStencil)
 		{
-			entry.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			entry.stencilLoadOp = (clearMask & (1 << 9)) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 			entry.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 		}
 		else

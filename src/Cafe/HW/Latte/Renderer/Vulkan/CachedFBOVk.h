@@ -28,6 +28,9 @@ public:
 		return m_vkrObjRenderPass;
 	}
 
+	// compatible render pass that clears some attachments when it begins, see VKRObjectRenderPass for the mask
+	VKRObjectRenderPass* GetRenderPassObjWithClear(uint32 clearMask);
+
 	// for KHR_dynamic_rendering
 	VkRenderingInfoKHR* GetRenderingInfo()
 	{
@@ -86,7 +89,9 @@ private:
 	VKRObjectTextureView* GetDepthStencilBufferImageView(bool& hasStencil);
 
 	VkDevice m_device;
+	VKRObjectRenderPass::AttachmentInfo_t m_attachmentInfo;
 	VKRObjectRenderPass* m_vkrObjRenderPass{};
+	std::vector<std::pair<uint32, VKRObjectRenderPass*>> m_vkrObjRenderPassesWithClear;
 	VKRObjectFramebuffer* m_vkrObjFramebuffer{};
 
 	VkExtent2D m_extend;

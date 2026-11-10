@@ -1299,6 +1299,47 @@ void VulkanRenderer::draw_setRenderPass()
 	}
 	else
 	{
+		// pending clears become load operations of the render pass
+		VkClearValue clearValues[9]{};
+		uint32 clearValueCount = 0;
+		if (clearAttachmentCount > 0)
+		{
+			uint32 clearMask = 0;
+			uint32 colorAttachmentCount = 0;
+			for (uint32 i = 0; i < 8; i++)
+			{
+				if (fboVk->colorBuffer[i].texture)
+					colorAttachmentCount++;
+			}
+			for (uint32 i = 0; i < clearAttachmentCount; i++)
+			{
+				const VkClearAttachment& attachment = clearAttachments[i];
+				uint32 attachmentIndex;
+				if (attachment.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT)
+				{
+					clearMask |= 1 << attachment.colorAttachment;
+					attachmentIndex = 0;
+					for (uint32 j = 0; j < attachment.colorAttachment; j++)
+					{
+						if (fboVk->colorBuffer[j].texture)
+							attachmentIndex++;
+					}
+				}
+				else
+				{
+					if (attachment.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
+						clearMask |= 1 << 8;
+					if (attachment.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT)
+						clearMask |= 1 << 9;
+					attachmentIndex = colorAttachmentCount;
+				}
+				clearValues[attachmentIndex] = attachment.clearValue;
+				clearValueCount = std::max(clearValueCount, attachmentIndex + 1);
+			}
+			vkObjRenderPass = fboVk->GetRenderPassObjWithClear(clearMask);
+			clearAttachmentCount = 0;
+		}
+
 		VkRenderPass renderPass = vkObjRenderPass->m_renderPass;
 		VkFramebuffer framebuffer = vkObjFramebuffer->m_frameBuffer;
 		VkExtent2D extend = fboVk->GetExtend();
@@ -1309,7 +1350,8 @@ void VulkanRenderer::draw_setRenderPass()
 		renderPassInfo.framebuffer = framebuffer;
 		renderPassInfo.renderArea.offset = { 0, 0 };
 		renderPassInfo.renderArea.extent = extend;
-		renderPassInfo.clearValueCount = 0;
+		renderPassInfo.clearValueCount = clearValueCount;
+		renderPassInfo.pClearValues = clearValues;
 		vkCmdBeginRenderPass(m_state.currentCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 	}
 

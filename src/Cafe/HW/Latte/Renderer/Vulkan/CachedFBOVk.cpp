@@ -36,7 +36,20 @@ void CachedFBOVk::CreateRenderPass()
 		attachmentInfo.depthAttachment.viewObj = nullptr;
 	}
 
+	m_attachmentInfo = attachmentInfo;
 	m_vkrObjRenderPass = new VKRObjectRenderPass(attachmentInfo);
+}
+
+VKRObjectRenderPass* CachedFBOVk::GetRenderPassObjWithClear(uint32 clearMask)
+{
+	for (auto& [mask, renderPass] : m_vkrObjRenderPassesWithClear)
+	{
+		if (mask == clearMask)
+			return renderPass;
+	}
+	auto renderPass = new VKRObjectRenderPass(m_attachmentInfo, Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS, clearMask);
+	m_vkrObjRenderPassesWithClear.emplace_back(clearMask, renderPass);
+	return renderPass;
 }
 
 CachedFBOVk::~CachedFBOVk()
@@ -48,6 +61,9 @@ CachedFBOVk::~CachedFBOVk()
 	m_vkrObjFramebuffer = nullptr;
 	vkr->ReleaseDestructibleObject(m_vkrObjRenderPass);
 	m_vkrObjRenderPass = nullptr;
+	for (auto& [mask, renderPass] : m_vkrObjRenderPassesWithClear)
+		vkr->ReleaseDestructibleObject(renderPass);
+	m_vkrObjRenderPassesWithClear.clear();
 }
 
 VKRObjectTextureView* CachedFBOVk::GetColorBufferImageView(uint32 index)
