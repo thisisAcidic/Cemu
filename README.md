@@ -18,7 +18,7 @@ Changes on top of the Cemu Android port, mostly in the Vulkan renderer and the A
 - Decoded index data is kept across frames, and command buffers are reset on a separate thread.
 - Idle emulated cores and the GPU thread sleep instead of spinning, so the CPU can clock down.
 - With the GamePad shown on a second screen, both screens no longer wait on each other every frame.
-- The GamePad image can be updated at a lower rate (automatic, full, low), and the TV and GamePad images can be placed on secondary displays.
+- The GamePad image can be updated at a lower rate (automatic, full, low), and the TV and GamePad images can be placed on secondary displays. There they cover the launcher of that screen, so it stops drawing in the background.
 - Several AArch64 code generation improvements in the recompiler.
 
 In the LEGO City Undercover harbor scene with the 60 FPS graphic pack on the AYN Thor, these changes keep 60 FPS while drawing about 1 W less than the previous development build (7.65 W → 6.65 W for the whole device, 99th percentile frame time 22 ms → 18 ms).
