@@ -44,7 +44,7 @@ public:
     void Close(); // called on title exit
 
 	bool HasPipelineCached(uint64 baseHash, uint64 pipelineStateHash);
-	void AddCurrentStateToCache(uint64 baseHash, uint64 pipelineStateHash);
+	void AddCurrentStateToCache(uint64 baseHash, uint64 pipelineStateHash, class VKRObjectRenderPass* renderPass);
 
 	// pipeline serialization for file
 	bool SerializePipeline(class MemStreamWriter& memWriter, struct CachedPipeline& cachedPipeline);

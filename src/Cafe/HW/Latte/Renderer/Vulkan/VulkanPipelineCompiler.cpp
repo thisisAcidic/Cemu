@@ -1070,7 +1070,7 @@ void PipelineCompiler::TrackAsCached(uint64 baseHash, uint64 pipelineStateHash)
 	auto& pipelineCache = VulkanPipelineStableCache::GetInstance();
 	if (pipelineCache.HasPipelineCached(baseHash, pipelineStateHash))
 		return;
-	pipelineCache.AddCurrentStateToCache(baseHash, pipelineStateHash);
+	pipelineCache.AddCurrentStateToCache(baseHash, pipelineStateHash, m_renderPassObj);
 }
 
 // calculate whether the pipeline requires robust buffer access

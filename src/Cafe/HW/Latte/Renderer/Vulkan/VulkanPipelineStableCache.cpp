@@ -147,6 +147,12 @@ struct CachedPipeline
 	ShaderHash psHash;
 
 	Latte::GPUCompactedRegisterState gpuState;
+
+	// formats of the render pass the pipeline was created for. It can have more attachments than the register state
+	// asks for, see VulkanRenderer::draw_keepRenderPassForSubset. Not stored by version 1 of the format
+	bool hasRenderPassFormats{};
+	VkFormat colorFormat[Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS]{};
+	VkFormat depthFormat{};
 };
 
 VkFormat __getColorBufferVkFormat(const uint32 index, const LatteContextRegister& lcr)
@@ -205,6 +211,28 @@ VKRObjectRenderPass* __CreateTemporaryRenderPass(const LatteDecompilerShader* pi
 		attachmentInfo.depthAttachment.isPresent = false;
 	}
 
+	return new VKRObjectRenderPass(attachmentInfo);
+}
+
+static bool __hasStencil(VkFormat format)
+{
+	return format == VK_FORMAT_D16_UNORM_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT;
+}
+
+// renderpass with the attachment formats stored along with the pipeline
+VKRObjectRenderPass* __CreateRenderPassFromFormats(const CachedPipeline& cachedPipeline)
+{
+	VKRObjectRenderPass::AttachmentInfo_t attachmentInfo;
+	for (int i = 0; i < Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS; ++i)
+	{
+		attachmentInfo.colorAttachment[i].viewObj = nullptr;
+		attachmentInfo.colorAttachment[i].isPresent = cachedPipeline.colorFormat[i] != VK_FORMAT_UNDEFINED;
+		attachmentInfo.colorAttachment[i].format = cachedPipeline.colorFormat[i];
+	}
+	attachmentInfo.depthAttachment.viewObj = nullptr;
+	attachmentInfo.depthAttachment.isPresent = cachedPipeline.depthFormat != VK_FORMAT_UNDEFINED;
+	attachmentInfo.depthAttachment.format = cachedPipeline.depthFormat;
+	attachmentInfo.depthAttachment.hasStencil = __hasStencil(cachedPipeline.depthFormat);
 	return new VKRObjectRenderPass(attachmentInfo);
 }
 
@@ -270,7 +298,7 @@ void VulkanPipelineStableCache::LoadPipelineFromCache(std::span<uint8> fileData)
 		cemu_assert_debug(false);
 		return;
 	}
-	auto renderPass = __CreateTemporaryRenderPass(pixelShader, *lcr);
+	auto renderPass = cachedPipeline->hasRenderPassFormats ? __CreateRenderPassFromFormats(*cachedPipeline) : __CreateTemporaryRenderPass(pixelShader, *lcr);
 	// create pipeline info
 	m_pipelineIsCachedLock.lock();
 	PipelineInfo* pipelineInfo = new PipelineInfo(0, 0, vertexShader->compatibleFetchShader, vertexShader, pixelShader, geometryShader);
@@ -312,7 +340,7 @@ bool VulkanPipelineStableCache::HasPipelineCached(uint64 baseHash, uint64 pipeli
 
 ConcurrentQueue<CachedPipeline*> g_pipelineCachingQueue;
 
-void VulkanPipelineStableCache::AddCurrentStateToCache(uint64 baseHash, uint64 pipelineStateHash)
+void VulkanPipelineStableCache::AddCurrentStateToCache(uint64 baseHash, uint64 pipelineStateHash, VKRObjectRenderPass* renderPass)
 {
 	m_pipelineIsCached.emplace(baseHash, pipelineStateHash);
 	if (!m_pipelineCacheStoreThread)
@@ -335,13 +363,17 @@ void VulkanPipelineStableCache::AddCurrentStateToCache(uint64 baseHash, uint64 p
 	if (ps)
 		job->psHash.set(ps->baseHash, ps->auxHash);
 	Latte::StoreGPURegisterState(LatteGPUState.contextNew, job->gpuState);
+	job->hasRenderPassFormats = true;
+	for (int i = 0; i < Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS; ++i)
+		job->colorFormat[i] = renderPass->GetColorFormat(i);
+	job->depthFormat = renderPass->GetDepthFormat();
 	// queue job
 	g_pipelineCachingQueue.push(job);
 }
 
 bool VulkanPipelineStableCache::SerializePipeline(MemStreamWriter& memWriter, CachedPipeline& cachedPipeline)
 {
-	memWriter.writeBE<uint8>(0x01); // version
+	memWriter.writeBE<uint8>(cachedPipeline.hasRenderPassFormats ? 0x02 : 0x01); // version
 	uint8 presentMask = 0;
 	if (cachedPipeline.vsHash.isPresent)
 		presentMask |= 1;
@@ -366,13 +398,20 @@ bool VulkanPipelineStableCache::SerializePipeline(MemStreamWriter& memWriter, Ca
 		memWriter.writeBE<uint64>(cachedPipeline.psHash.auxHash);
 	}
 	Latte::SerializeRegisterState(cachedPipeline.gpuState, memWriter);
+	if (cachedPipeline.hasRenderPassFormats)
+	{
+		for (VkFormat format : cachedPipeline.colorFormat)
+			memWriter.writeBE<uint32>(format);
+		memWriter.writeBE<uint32>(cachedPipeline.depthFormat);
+	}
 	return true;
 }
 
 bool VulkanPipelineStableCache::DeserializePipeline(MemStreamReader& memReader, CachedPipeline& cachedPipeline)
 {
 	// version
-	if (memReader.readBE<uint8>() != 1)
+	uint8 version = memReader.readBE<uint8>();
+	if (version != 1 && version != 2)
 	{
 		cemuLog_log(LogType::Force, "Cached Vulkan pipeline corrupted or has unknown version");
 		return false;
@@ -401,6 +440,13 @@ bool VulkanPipelineStableCache::DeserializePipeline(MemStreamReader& memReader, 
 	if (!Latte::DeserializeRegisterState(cachedPipeline.gpuState, memReader))
 	{
 		return false;
+	}
+	if (version >= 2)
+	{
+		cachedPipeline.hasRenderPassFormats = true;
+		for (VkFormat& format : cachedPipeline.colorFormat)
+			format = (VkFormat)memReader.readBE<uint32>();
+		cachedPipeline.depthFormat = (VkFormat)memReader.readBE<uint32>();
 	}
 	cemu_assert_debug(!memReader.hasError());
 	return true;
