@@ -260,6 +260,7 @@ public:
 	void ProcessFinishedCommandBuffers();
 	void WaitForNextFinishedCommandBuffer();
 	void SubmitCommandBuffer(VkSemaphore signalSemaphore = VK_NULL_HANDLE, VkSemaphore waitSemaphore = VK_NULL_HANDLE);
+	std::vector<VkSemaphore> m_pendingAcquireSemaphores; // acquired swapchain images the next submit has to wait for
 	void RequestSubmitSoon();
 	void RequestSubmitOnIdle();
 
@@ -638,7 +639,6 @@ private:
 	std::unordered_map<uint64, VkPipeline> m_backbufferBlitPipelineCache;
 	std::unordered_map<uint64, VkDescriptorSet> m_backbufferBlitDescriptorSetCache;
 	VkPipelineLayout m_pipelineLayout{nullptr};
-	VkCommandPool m_commandPool{ nullptr };
 
 	// buffer to cache uniform vars
 	VkBuffer m_uniformVarBuffer = VK_NULL_HANDLE;
@@ -695,6 +695,16 @@ private:
 	std::array<size_t, kCommandBufferPoolSize> m_cmdBufferUniformRingbufIndices {}; // read index in the uniform ringbuffer after the command buffer finishes
 	std::array<VkFence, kCommandBufferPoolSize> m_cmdBufferFences;
 	std::array<VkCommandBuffer, kCommandBufferPoolSize> m_commandBuffers;
+	std::array<VkCommandPool, kCommandBufferPoolSize> m_commandPools{}; // one per command buffer, so they can be reset on another thread
+	// finished command buffers are reset on a separate thread, resetting is expensive in some drivers
+	void CommandBufferResetThread();
+	void WaitCommandBufferReset(size_t commandBufferIndex);
+	std::thread m_commandBufferResetThread;
+	std::mutex m_commandBufferResetMutex;
+	std::condition_variable m_commandBufferResetCondition;
+	std::vector<size_t> m_commandBuffersToReset;
+	std::array<bool, kCommandBufferPoolSize> m_commandBufferIsReset{};
+	bool m_commandBufferResetThreadStop{};
 	std::array<VkSemaphore, kCommandBufferPoolSize> m_commandBufferSemaphores;
 
 	VkSemaphore GetLastSubmittedCmdBufferSemaphore()

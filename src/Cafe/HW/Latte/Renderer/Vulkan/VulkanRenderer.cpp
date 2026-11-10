@@ -826,6 +826,8 @@ VulkanRenderer::VulkanRenderer() : Renderer(RendererAPI::Vulkan)
 	QueryAvailableFormats();
 	CreateCommandPool();
 	CreateCommandBuffers();
+	m_commandBufferIsReset.fill(true);
+	m_commandBufferResetThread = std::thread(&VulkanRenderer::CommandBufferResetThread, this);
 	CreateDescriptorPool();
 	swapchain_createDescriptorSetLayout();
 
@@ -889,6 +891,13 @@ VulkanRenderer::~VulkanRenderer()
 	SubmitCommandBuffer();
 	WaitDeviceIdle();
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
+	{
+		std::lock_guard lock(m_commandBufferResetMutex);
+		m_commandBufferResetThreadStop = true;
+	}
+	m_commandBufferResetCondition.notify_all();
+	if (m_commandBufferResetThread.joinable())
+		m_commandBufferResetThread.join();
 	// shut down pipeline save thread
 	m_destructionRequested = true;
 	m_pipeline_cache_semaphore.notify();
@@ -962,8 +971,12 @@ VulkanRenderer::~VulkanRenderer()
 	if (m_pipelineLayout != VK_NULL_HANDLE)
 		vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
 
-	if (m_commandPool != VK_NULL_HANDLE)
-		vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
+	for (VkCommandPool& commandPool : m_commandPools)
+	{
+		if (commandPool != VK_NULL_HANDLE)
+			vkDestroyCommandPool(m_logicalDevice, commandPool, nullptr);
+		commandPool = VK_NULL_HANDLE;
+	}
 
 	VKRObjectSampler::DestroyCache();
 
@@ -1773,11 +1786,14 @@ void VulkanRenderer::CreateCommandPool()
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = m_indices.graphicsFamily;
-	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
-	VkResult result = vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &m_commandPool);
-	if (result != VK_SUCCESS)
-		throw std::runtime_error(fmt::format("Failed to create command pool: {}", result));
+	for (VkCommandPool& commandPool : m_commandPools)
+	{
+		VkResult result = vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &commandPool);
+		if (result != VK_SUCCESS)
+			throw std::runtime_error(fmt::format("Failed to create command pool: {}", result));
+	}
 }
 
 void VulkanRenderer::CreateCommandBuffers()
@@ -1794,17 +1810,20 @@ void VulkanRenderer::CreateCommandBuffers()
 		vkCreateFence(m_logicalDevice, &fenceInfo, nullptr, &*it);
 	}
 
-	VkCommandBufferAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = m_commandPool;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = (uint32_t)m_commandBuffers.size();
-
-	const VkResult result = vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, m_commandBuffers.data());
-	if (result != VK_SUCCESS)
+	for (size_t i = 0; i < m_commandBuffers.size(); i++)
 	{
-		cemuLog_log(LogType::Force, "Failed to allocate command buffers: {}", result);
-		throw std::runtime_error(fmt::format("Failed to allocate command buffers: {}", result));
+		VkCommandBufferAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.commandPool = m_commandPools[i];
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocInfo.commandBufferCount = 1;
+
+		const VkResult result = vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, &m_commandBuffers[i]);
+		if (result != VK_SUCCESS)
+		{
+			cemuLog_log(LogType::Force, "Failed to allocate command buffers: {}", result);
+			throw std::runtime_error(fmt::format("Failed to allocate command buffers: {}", result));
+		}
 	}
 
 	for (auto& semItr : m_commandBufferSemaphores)
@@ -2243,6 +2262,7 @@ void VulkanRenderer::InitFirstCommandBuffer()
 
 	m_state.currentCommandBuffer = m_commandBuffers[m_commandBufferIndex];
 	vkResetFences(m_logicalDevice, 1, &m_cmdBufferFences[m_commandBufferIndex]);
+	WaitCommandBufferReset(m_commandBufferIndex);
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -2262,6 +2282,11 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 		VkResult fenceStatus = vkGetFenceStatus(m_logicalDevice, m_cmdBufferFences[m_commandBufferSyncIndex]);
 		if (fenceStatus == VK_SUCCESS)
 		{
+			{
+				std::lock_guard lock(m_commandBufferResetMutex);
+				m_commandBuffersToReset.emplace_back(m_commandBufferSyncIndex);
+			}
+			m_commandBufferResetCondition.notify_all();
 			ProcessDestructionQueue();
 			m_uniformVarBufferReadIndex = m_cmdBufferUniformRingbufIndices[m_commandBufferSyncIndex];
 			m_commandBufferSyncIndex = (m_commandBufferSyncIndex + 1) % m_commandBuffers.size();
@@ -2281,6 +2306,57 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 	{
 		LatteTextureReadback_UpdateFinishedTransfers(false);
 	}
+}
+
+void VulkanRenderer::CommandBufferResetThread()
+{
+	SetThreadName("vkCmdReset");
+#if BOOST_OS_LINUX
+	// this is light work, keep it on the slowest cores
+	std::vector<uint32> maxFrequencies;
+	while (true)
+	{
+		std::ifstream file(fmt::format("/sys/devices/system/cpu/cpu{}/cpufreq/cpuinfo_max_freq", maxFrequencies.size()));
+		uint32 frequency;
+		if (!(file >> frequency))
+			break;
+		maxFrequencies.emplace_back(frequency);
+	}
+	if (maxFrequencies.size() > 1)
+	{
+		const uint32 slowest = *std::min_element(maxFrequencies.begin(), maxFrequencies.end());
+		cpu_set_t cores;
+		CPU_ZERO(&cores);
+		for (size_t i = 0; i < maxFrequencies.size(); i++)
+		{
+			if (maxFrequencies[i] == slowest)
+				CPU_SET(i, &cores);
+		}
+		sched_setaffinity(0, sizeof(cores), &cores);
+	}
+#endif
+	std::unique_lock lock(m_commandBufferResetMutex);
+	while (true)
+	{
+		m_commandBufferResetCondition.wait(lock, [this] { return m_commandBufferResetThreadStop || !m_commandBuffersToReset.empty(); });
+		if (m_commandBufferResetThreadStop)
+			break;
+		const size_t index = m_commandBuffersToReset.front();
+		m_commandBuffersToReset.erase(m_commandBuffersToReset.begin());
+		lock.unlock();
+		// keeps the memory of the command buffer for reuse
+		vkResetCommandPool(m_logicalDevice, m_commandPools[index], 0);
+		lock.lock();
+		m_commandBufferIsReset[index] = true;
+		m_commandBufferResetCondition.notify_all();
+	}
+}
+
+void VulkanRenderer::WaitCommandBufferReset(size_t commandBufferIndex)
+{
+	std::unique_lock lock(m_commandBufferResetMutex);
+	m_commandBufferResetCondition.wait(lock, [&] { return m_commandBufferIsReset[commandBufferIndex]; });
+	m_commandBufferIsReset[commandBufferIndex] = false;
 }
 
 void VulkanRenderer::WaitForNextFinishedCommandBuffer()
@@ -2330,13 +2406,27 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 
 	// wait for previous command buffer semaphore
 	VkSemaphore prevSem = GetLastSubmittedCmdBufferSemaphore();
-	const VkPipelineStageFlags semWaitStageMask[2] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT };
-	VkSemaphore waitSemArray[2];
+	VkPipelineStageFlags semWaitStageMask[4];
+	VkSemaphore waitSemArray[4];
 	submitInfo.waitSemaphoreCount = 0;
 	if (waitSemaphore != VK_NULL_HANDLE)
+	{
+		semWaitStageMask[submitInfo.waitSemaphoreCount] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 		waitSemArray[submitInfo.waitSemaphoreCount++] = waitSemaphore;
+	}
+	// swapchain images are only written as color attachments
+	cemu_assert_debug(m_pendingAcquireSemaphores.size() <= 2);
+	for (VkSemaphore acquireSemaphore : m_pendingAcquireSemaphores)
+	{
+		semWaitStageMask[submitInfo.waitSemaphoreCount] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		waitSemArray[submitInfo.waitSemaphoreCount++] = acquireSemaphore;
+	}
+	m_pendingAcquireSemaphores.clear();
 	if (m_numSubmittedCmdBuffers > 0)
+	{
+		semWaitStageMask[submitInfo.waitSemaphoreCount] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 		waitSemArray[submitInfo.waitSemaphoreCount++] = prevSem; // wait on semaphore from previous submit
+	}
 	submitInfo.pWaitDstStageMask = semWaitStageMask;
 	submitInfo.pWaitSemaphores = waitSemArray;
 
@@ -2362,7 +2452,7 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 
 	m_state.currentCommandBuffer = m_commandBuffers[m_commandBufferIndex];
 	vkResetFences(m_logicalDevice, 1, &m_cmdBufferFences[m_commandBufferIndex]);
-	vkResetCommandBuffer(m_state.currentCommandBuffer, 0);
+	WaitCommandBufferReset(m_commandBufferIndex);
 
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3127,7 +3217,8 @@ bool VulkanRenderer::AcquireNextSwapchainImage(bool mainWindow)
 	if (!result)
 		return false;
 
-	SubmitCommandBuffer(VK_NULL_HANDLE, chainInfo.ConsumeAcquireSemaphore());
+	// the next submit waits for the image, that saves a submit for every acquired image
+	m_pendingAcquireSemaphores.emplace_back(chainInfo.ConsumeAcquireSemaphore());
 	return true;
 }
 

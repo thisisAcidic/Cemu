@@ -120,6 +120,7 @@ VKFUNC_DEVICE(vkAllocateCommandBuffers);
 VKFUNC_DEVICE(vkFreeCommandBuffers);
 VKFUNC_DEVICE(vkBeginCommandBuffer);
 VKFUNC_DEVICE(vkResetCommandBuffer);
+VKFUNC_DEVICE(vkResetCommandPool);
 VKFUNC_DEVICE(vkEndCommandBuffer);
 VKFUNC_DEVICE(vkQueueSubmit);
 
