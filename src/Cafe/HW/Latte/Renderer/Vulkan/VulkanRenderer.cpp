@@ -4099,6 +4099,20 @@ void VulkanRenderer::texture_clearLater(LatteTextureVk* texture, sint32 sliceInd
 	auto& pending = texture->m_pendingClear;
 	if (pending.isPending && (pending.sliceIndex != sliceIndex || pending.mipIndex != mipIndex))
 		texture_flushPendingClear(texture);
+	// render passes expect their attachments in the default layout, so the first clear of a new texture also does
+	// the transition out of UNDEFINED and can't wait
+	VkImageSubresource subresource{};
+	subresource.mipLevel = mipIndex;
+	subresource.arrayLayer = sliceIndex;
+	if (texture->GetImageLayout(subresource) == VK_IMAGE_LAYOUT_UNDEFINED)
+	{
+		texture_flushPendingClear(texture);
+		if (aspectMask == VK_IMAGE_ASPECT_COLOR_BIT)
+			ClearColorImage(texture, sliceIndex, mipIndex, value.color, texture->GetDefaultLayout());
+		else
+			texture_clearDepthSliceNow(texture, sliceIndex, mipIndex, aspectMask, value.depthStencil.depth, value.depthStencil.stencil);
+		return;
+	}
 	// attachments of the running render pass have no pending clears, they are cleared right away
 	CachedFBOVk* fboVk = m_state.activeRenderpassFBO;
 	if (fboVk && std::find(fboVk->GetTextures().begin(), fboVk->GetTextures().end(), texture) != fboVk->GetTextures().end())
