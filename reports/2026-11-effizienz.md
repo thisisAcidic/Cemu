@@ -393,3 +393,9 @@ Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Buil
 - Cocoon Shell (`rip.moth.cocoonshell`, Launcher auf dem unteren Bildschirm) läuft hinter der GamePad-Presentation weiter: rund 21 Bilder/s, 26–37 % eines CPU-Kerns, dazu SurfaceFlinger-Arbeit.
 - Eine Presentation ist nur ein Fenster über der Activity des Displays. Mit einer eigenen Activity auf dem Display (`EmulationDisplayActivity`, Branch `perf/pad-activity`) stoppt Android Cocoon: 0 Bilder in 10 s.
 - Eine nicht fokussierbare Activity führt zu ANR: Der Start macht das Display zum fokussierten, ohne fokussierbares Fenster hält Android die Gamepad-Eingaben zurück. Die Activity ist deshalb fokussierbar und reicht Tasten und Sticks an die Emulations-Activity weiter.
+
+### Controller-Abfrage im Prozess der Spieleliste
+
+- Ursache für die +0,07 W des Release-Builds gegenüber dem Profil-Build: `InputManager` startet seinen Abfrage-Thread (`Input_update`, 1 ms Takt) in jedem Prozess. Im Release-Build läuft das Spiel in `:EmulationProcess`, der Prozess der Spieleliste fragte trotzdem weiter ab, rund 2 % eines Kerns und 1000 Weckvorgänge pro Sekunde.
+- Fix (`ab9b0a64`): Die Abfrage pausiert, solange im Prozess keine Activity gestartet ist. In Builds mit einem Prozess läuft sie während des Spiels weiter, weil die Emulations-Activity gestartet ist.
+- Offen: Im Emulationsprozess kostet derselbe Thread ähnlich viel. Android-Controller liefern ihre Werte per Ereignis, ein längeres Intervall oder ereignisgesteuerte Updates wären ein eigenes Experiment.
