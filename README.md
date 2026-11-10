@@ -55,6 +55,10 @@ Your saves, graphic packs, game profiles and shader caches can be taken along. B
 
 Open an [issue](https://github.com/thisisAcidic/Cemu/issues/new/choose) and attach the log: *Share log file* in the menu of the game list shares the `log.txt` of the last run. It helps a lot to know whether the same problem happens in the Cemu Android port.
 
+## Privacy
+
+Cidemu collects no data and has no analytics. It only goes online when you download graphic packs (it asks cemu.info for the current download and fetches the packs from GitHub) and when a game uses online features with the console files and network settings you set up.
+
 ## Building
 
 1. `git clone --recursive https://github.com/thisisAcidic/Cemu`
