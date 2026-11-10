@@ -4,6 +4,11 @@ Cidemu is a Wii U emulator for Android handhelds. It is based on [Cemu](https://
 
 Cidemu is an independent project. It is not affiliated with the Cemu project or with Nintendo. Please don't report Cidemu issues to the Cemu developers.
 
+<p align="center">
+  <img src="docs/screenshots/dual-screen.jpg" width="440" alt="LEGO City Undercover on the AYN Thor with the TV image on the main screen and the GamePad image on the second screen">
+  <img src="docs/screenshots/menus.jpg" width="440" alt="The game list and the general settings">
+</p>
+
 ## Status
 
 Cidemu is early software. Most of the work so far was measured and tested on an AYN Thor (Snapdragon 8 Gen 2, Adreno 740) with LEGO City Undercover. Other games and devices should work as well as they do in the Cemu Android port, but they have seen far less testing. If a game behaves differently in Cidemu than in the Cemu Android port, please open an issue.
@@ -21,7 +26,19 @@ Changes on top of the Cemu Android port, mostly in the Vulkan renderer and the A
 - The GamePad image can be updated at a lower rate (automatic, full, low), and the TV and GamePad images can be placed on secondary displays. There they cover the launcher of that screen, so it stops drawing in the background.
 - Several AArch64 code generation improvements in the recompiler.
 
-In the LEGO City Undercover harbor scene with the 60 FPS graphic pack on the AYN Thor, these changes keep 60 FPS while drawing about 1 W less than the previous development build (7.65 W → 6.65 W for the whole device, 99th percentile frame time 22 ms → 18 ms).
+## Measurements
+
+All numbers are from an AYN Thor (Snapdragon 8 Gen 2) running LEGO City Undercover (EU, v0) with the 60 FPS graphic pack, the system Vulkan driver and the GamePad image on the second screen, in the harbor with a camera sweep. Each change was compared with the build before it.
+
+| Change | Before | After |
+|---|---|---|
+| Each screen only waits for its own previous frame | 55.0 FPS, 18 % of frames within 16.7 ms | 59.4 FPS, 51 % of frames within 16.7 ms |
+| Idle cores and the GPU thread sleep | 99th percentile frame time 23.6 ms, fastest core always at 3.19 GHz | 19.5 ms, fastest core between 1.84 and 3.19 GHz |
+| Clears inside render passes, render pass reuse, scaling by the display hardware, index cache, command buffer reset thread, GamePad frame rate | 7.65 W, 59.1 FPS, 99th percentile 22.4 ms | 6.65 W, 59.9 FPS, 18.1 ms, 28 % less GPU work, about 4 °C cooler |
+| LEGO City Undercover profile without the accurate shader multiplication | 6.55 W | 6.28 W, 19 % less GPU work |
+| GamePad screen as its own activity | launcher of the second screen keeps drawing about 21 frames per second, 26–37 % of a CPU core | launcher stopped |
+
+The first two rows were measured at stock clocks, as battery power. The others were measured with the CPU and GPU limited the way the device is usually played (prime core 2.09 GHz, middle cores 2.05 GHz, GPU 550 MHz), as the power the whole device draws over USB. Single runs vary by about ±0.2 W, so the power figures are averages of alternating runs.
 
 ## Requirements
 
