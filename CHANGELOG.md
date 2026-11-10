@@ -1,5 +1,11 @@
 # Changelog
 
+## Cidemu 0.4
+
+- Fixed Need for Speed: Most Wanted U crashing right after the start in about half of the launches. The emulated Wii U memory was only aligned to the 4 KB pages of Android, so memory that a game requested with a larger alignment could come back misaligned, depending on where Android placed the emulated memory. The game then built its memory pools with a null pointer. The emulated memory is now aligned to 4 GB. The Cemu Android port has the same problem.
+- Vulkan: Pipelines are stored in the pipeline cache together with the attachment formats of their render pass. A pipeline used in a render pass that Cidemu kept open for more draws was precompiled for the wrong render pass at the next start. That only mattered when the driver's own cache was empty, for example after a driver update, but then those pipelines were compiled again during play.
+- The crash log contains the CPU registers at the time of the crash, which makes crashes in or near recompiled code easier to locate.
+
 ## Cidemu 0.3
 
 - The app id is now `dev.cidix.cidemu`, after the cidix.dev domain. Cidemu 0.3 installs as a new app next to 0.2, copy the data folder over once (see the README) and uninstall 0.2 afterwards.
