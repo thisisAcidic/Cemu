@@ -3174,8 +3174,8 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
 		WindowSystem::GetWindowPhysSize(width, height);
 	else
 		WindowSystem::GetPadWindowPhysSize(width, height);
-	auto extent = chainInfo.getExtent();
-	if (width != extent.width || height != extent.height)
+	// the swapchain can be smaller than the window, see GetScaledPresentSize
+	if (width != chainInfo.m_desiredExtent.x || height != chainInfo.m_desiredExtent.y)
 		stateChanged = true;
 
 #if BOOST_PLAT_ANDROID
@@ -3401,6 +3401,34 @@ void VulkanRenderer::ClearColorImage(LatteTextureVk* vkTexture, uint32 sliceInde
 	ClearColorImageRaw(imageObj->m_image, sliceIndex, mipIndex, color, inputLayout, outputLayout);
 	vkTexture->SetImageLayout(subresourceRange, outputLayout);
 }
+
+#if BOOST_PLAT_ANDROID
+// Upscaling the image to the window size with the GPU costs a full screen pass and the memory bandwidth for a large
+// swapchain image. Android scales a smaller swapchain to the window, and the compositor usually does that with the
+// display hardware. So the swapchain is made just large enough to show the image 1:1
+bool VulkanRenderer::GetScaledPresentSize(bool padView, sint32 imageWidth, sint32 imageHeight, sint32& presentWidth, sint32& presentHeight)
+{
+	if (!IsSwapchainInfoValid(!padView))
+		return false;
+	auto& chainInfo = GetChainInfo(!padView);
+	if (chainInfo.m_imageSizeForScaling != Vector2i(imageWidth, imageHeight))
+	{
+		chainInfo.m_imageSizeForScaling = {imageWidth, imageHeight};
+		chainInfo.m_shouldRecreate = true;
+	}
+	int windowWidth, windowHeight;
+	if (padView)
+		WindowSystem::GetPadWindowPhysSize(windowWidth, windowHeight);
+	else
+		WindowSystem::GetWindowPhysSize(windowWidth, windowHeight);
+	if (windowWidth <= 0 || windowHeight <= 0)
+		return false;
+	VkExtent2D extent = SwapchainInfoVk::GetScaledExtent({(uint32)windowWidth, (uint32)windowHeight}, chainInfo.m_imageSizeForScaling);
+	presentWidth = extent.width;
+	presentHeight = extent.height;
+	return true;
+}
+#endif
 
 void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter, sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight, bool padView, bool clearBackground)
 {

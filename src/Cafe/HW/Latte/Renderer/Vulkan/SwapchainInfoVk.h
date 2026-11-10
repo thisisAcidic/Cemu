@@ -46,6 +46,8 @@ struct SwapchainInfoVk
 	VkPresentModeKHR ChoosePresentMode(const std::vector<VkPresentModeKHR>& modes);
 	VkSurfaceFormatKHR ChooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) const;
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
+	// smallest extent with the aspect ratio of the window that still shows the image without downscaling
+	static VkExtent2D GetScaledExtent(VkExtent2D windowExtent, Vector2i imageSize);
 
 	VkSwapchainCreateInfoKHR CreateSwapchainCreateInfo(VkSurfaceKHR surface, const SwapchainSupportDetails& swapchainSupport, const VkSurfaceFormatKHR& surfaceFormat, uint32 imageCount, const VkExtent2D& extent);
 
@@ -76,6 +78,7 @@ struct SwapchainInfoVk
 	VkSurfaceFormatKHR m_surfaceFormat{};
 	VkSwapchainKHR m_swapchain{};
 	Vector2i m_desiredExtent{};
+	Vector2i m_imageSizeForScaling{}; // size of the presented image, the display scales the swapchain up to the window
 	VkExtent2D m_actualExtent{};
 	uint32 swapchainImageIndex = (uint32)-1;
 	uint64 m_presentId = 1;

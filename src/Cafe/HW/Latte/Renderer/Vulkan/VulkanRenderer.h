@@ -282,6 +282,9 @@ public:
 	void ClearColorImage(LatteTextureVk* vkTexture, uint32 sliceIndex, uint32 mipIndex, const VkClearColorValue& color, VkImageLayout outputLayout);
 
 	void DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter, sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight, bool padView, bool clearBackground) override;
+#if BOOST_PLAT_ANDROID
+	bool GetScaledPresentSize(bool padView, sint32 imageWidth, sint32 imageHeight, sint32& presentWidth, sint32& presentHeight) override;
+#endif
 	void CreateDescriptorPool();
 	VkDescriptorSet backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter);
 

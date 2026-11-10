@@ -864,14 +864,8 @@ void LatteRenderTarget_itHLEClearColorDepthStencil(uint32 clearMask,
 sint32 _currentOutputImageWidth = 0;
 sint32 _currentOutputImageHeight = 0;
 
-void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, sint32* height, sint32* fullWidth, sint32* fullHeight, bool padView)
+static void LatteRenderTarget_getImageAreaInside(sint32 w, sint32 h, sint32* x, sint32* y, sint32* width, sint32* height, sint32* fullWidth, sint32* fullHeight)
 {
-	int w, h;
-	if(padView && WindowSystem::IsPadWindowOpen())
-		WindowSystem::GetPadWindowPhysSize(w, h);
-	else
-		WindowSystem::GetWindowPhysSize(w, h);
-
 	sint32 scaledOutputX;
 	sint32 scaledOutputY;
 	if (GetConfig().fullscreen_scaling == kKeepAspectRatio)
@@ -901,6 +895,16 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
 		*fullHeight = h;
 }
 
+void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, sint32* height, sint32* fullWidth, sint32* fullHeight, bool padView)
+{
+	int w, h;
+	if(padView && WindowSystem::IsPadWindowOpen())
+		WindowSystem::GetPadWindowPhysSize(w, h);
+	else
+		WindowSystem::GetWindowPhysSize(w, h);
+	LatteRenderTarget_getImageAreaInside(w, h, x, y, width, height, fullWidth, fullHeight);
+}
+
 void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPadView)
 {
 	// make sure texture is updated to latest data in cache
@@ -917,7 +921,11 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	sint32 imageWidth, imageHeight;
 	sint32 fullscreenWidth, fullscreenHeight;
 
-	LatteRenderTarget_getScreenImageArea(&imageX, &imageY, &imageWidth, &imageHeight, &fullscreenWidth, &fullscreenHeight, isPadView);
+	sint32 presentWidth, presentHeight;
+	if (g_renderer->GetScaledPresentSize(isPadView, effectiveWidth, effectiveHeight, presentWidth, presentHeight))
+		LatteRenderTarget_getImageAreaInside(presentWidth, presentHeight, &imageX, &imageY, &imageWidth, &imageHeight, &fullscreenWidth, &fullscreenHeight);
+	else
+		LatteRenderTarget_getScreenImageArea(&imageX, &imageY, &imageWidth, &imageHeight, &fullscreenWidth, &fullscreenHeight, isPadView);
 
 	bool clearBackground = false;
 	if (imageWidth != fullscreenWidth || imageHeight != fullscreenHeight)
