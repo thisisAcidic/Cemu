@@ -81,4 +81,5 @@ jobs:
             echo "CHANGELOG.md has no section for Cidemu $version"
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" $apk --title "Cidemu $version" --notes-file release-notes.md
+          sha256sum $apk > $apk.sha256
+          gh release create "$GITHUB_REF_NAME" $apk $apk.sha256 --title "Cidemu $version" --notes-file release-notes.md
