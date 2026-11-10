@@ -3602,11 +3602,17 @@ void VulkanRenderer::rendertarget_deleteCachedFBO(LatteCachedFBO* cfbo)
 {
 	if (cfbo == m_state.activeFBO)
 		m_state.activeFBO = nullptr;
+	if (cfbo == m_state.requestedFBO)
+		m_state.requestedFBO = nullptr;
+	// a kept render pass can outlive the framebuffer the game set last
+	if (cfbo == m_state.activeRenderpassFBO)
+		draw_endRenderPass();
 }
 
 void VulkanRenderer::rendertarget_bindFramebufferObject(LatteCachedFBO* cfbo)
 {
 	m_state.activeFBO = (CachedFBOVk*)cfbo;
+	m_state.requestedFBO = m_state.activeFBO;
 }
 
 void* VulkanRenderer::texture_acquireTextureUploadBuffer(uint32 size)
