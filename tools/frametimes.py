@@ -17,6 +17,19 @@ def summarize(rows):
     }
 
 
+def summarize_presents(path, window_s):
+    """Same numbers from SurfaceFlinger present times in ns, for the last window_s seconds."""
+    with open(path) as f:
+        presents = sorted(int(line) for line in f.readlines()[1:] if line.strip())
+    if len(presents) < 2:
+        return {}
+    presents = [t for t in presents if t >= presents[-1] - window_s * 1e9]
+    rows = [{'frametime_us': (b - a) // 1000, 'shadercreate_us': 0} for a, b in zip(presents, presents[1:])]
+    result = summarize(rows)
+    del result['shadercreate_ms_total']
+    return result
+
+
 def load(path):
     with open(path, newline='') as f:
         return [{k: int(v) for k, v in row.items()} for row in csv.DictReader(f)]

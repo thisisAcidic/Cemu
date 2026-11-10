@@ -134,6 +134,8 @@ def main():
     r.adb('shell', f"{'touch' if args.llvm else 'rm -f'} {r.FILES}/llvm.enable")
     thermal = subprocess.Popen([os.path.join(TOOLS, 'thermal_log.sh'), os.path.join(out, 'thermal.csv'), '5'], start_new_session=True, env={**os.environ, 'CEMU_PROCESS': r.EMU_PROCESS})
     power_log = subprocess.Popen([sys.executable, os.path.join(TOOLS, 'power_log.py'), os.path.join(out, 'power.csv')], start_new_session=True)
+    # present times from SurfaceFlinger, the same for every build, also those without the frame time log
+    sf_log = subprocess.Popen([sys.executable, os.path.join(TOOLS, 'sf_frames.py'), r.PKG, os.path.join(out, 'sf_frames.csv')], start_new_session=True)
     cmd = [sys.executable, os.path.join(TOOLS, 'lcu_repro.py'), '-', out, '--cooldown', str(args.cooldown)]
     if args.settle:
         cmd += ['--settle', str(args.settle)]
@@ -159,19 +161,22 @@ def main():
     repro.wait()
     os.killpg(thermal.pid, signal.SIGTERM)
     os.killpg(power_log.pid, signal.SIGTERM)
+    os.killpg(sf_log.pid, signal.SIGTERM)
     if args.fresh_spirv:
         r.adb('shell', f'mv -f {spirv}.keep {spirv}')
-    r.adb('pull', '-q', f'{r.FILES}/frametimes.csv', os.path.join(out, 'frametimes.csv'))
+    r.adb('pull', '-q', f'{r.FILES}/frametimes.csv', os.path.join(out, 'frametimes.csv'), check=False)
     if args.jitmap:
         r.adb('pull', '-q', f'{r.FILES}/jitmap.txt', os.path.join(out, 'jitmap.txt'))
         # only there when jitdump.enable exists
         r.adb('pull', '-q', f'{r.FILES}/dump/recompiler', os.path.join(out, 'recompiler'), check=False)
 
-    rows = frametimes.load(os.path.join(out, 'frametimes.csv'))
     window = args.idle if args.idle else SCENE_WINDOW_S[args.scene]
-    last = rows[-1]['timestamp_us']
-    scene_rows = [row for row in rows if row['timestamp_us'] >= last - window * 1e6]
-    summary = {'config': vars(args), 'frames': frametimes.summarize(scene_rows), 'thermal': thermal_summary(os.path.join(out, 'thermal.csv'), window)}
+    summary = {'config': vars(args), 'thermal': thermal_summary(os.path.join(out, 'thermal.csv'), window)}
+    if os.path.exists(os.path.join(out, 'frametimes.csv')):
+        rows = frametimes.load(os.path.join(out, 'frametimes.csv'))
+        last = rows[-1]['timestamp_us']
+        summary['frames'] = frametimes.summarize([row for row in rows if row['timestamp_us'] >= last - window * 1e6])
+    summary['sf_frames'] = frametimes.summarize_presents(os.path.join(out, 'sf_frames.csv'), window)
     summary['thermal'].update(power_summary(os.path.join(out, 'power.csv'), window))
     if perf is not None:
         summary['perf_stderr'] = perf.stderr[-500:]
