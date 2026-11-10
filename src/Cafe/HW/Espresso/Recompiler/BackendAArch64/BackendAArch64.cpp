@@ -1813,12 +1813,21 @@ static bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFun
 
 bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
 {
-	bool needsMoreJumpInstructions;
-	if (PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 1, needsMoreJumpInstructions))
-		return true;
-	if (!needsMoreJumpInstructions)
+	// xbyak throws for labels it can't reach, e.g. a conditional branch to cold code more than 1MB away in very large functions
+	try
+	{
+		bool needsMoreJumpInstructions;
+		if (PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 1, needsMoreJumpInstructions))
+			return true;
+		if (!needsMoreJumpInstructions)
+			return false;
+		return PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 2, needsMoreJumpInstructions);
+	}
+	catch (const Xbyak_aarch64::Error& e)
+	{
+		cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): {}", e.what());
 		return false;
-	return PPCRecompiler_generateAArch64Code(PPCRecFunction, ppcImlGenContext, 2, needsMoreJumpInstructions);
+	}
 }
 
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
