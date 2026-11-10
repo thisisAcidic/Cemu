@@ -48,7 +48,7 @@ Your saves, graphic packs, game profiles and shader caches can be taken along. B
 
 - *Settings > General settings > GamePad screen frame rate*: *Automatic* only redraws the GamePad image when it changes and at most 30 times per second, which saves power in most games. Use *Always full* if a game shows something on the GamePad that has to move smoothly.
 - On dual screen devices the GamePad image goes to the second screen. *Swap screens* in the same place swaps the TV and GamePad images.
-- *Shader multiplication accuracy* in a game's profile (long press the game, *Edit game profile*) is on by default because some games need it. Turning it off makes the GPU work noticeably less, in LEGO City Undercover about 0.3 to 0.4 W less without visible differences. If a game shows graphical errors afterwards, turn it back on.
+- *Shader multiplication accuracy* in a game's profile (long press the game, *Edit game profile*) is on by default because some games need it. Turning it off makes the GPU work noticeably less. Cidemu already turns it off for LEGO City Undercover, which saves about 0.3 to 0.4 W there without visible differences. If a game shows graphical errors with it off, turn it back on.
 - *Settings > Graphics settings > Custom drivers* installs Adreno drivers such as Turnip. The system driver is the default and usually the best choice on Snapdragon 8 Gen 2 devices.
 
 ## Reporting problems

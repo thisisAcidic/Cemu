@@ -12,6 +12,7 @@ The first release under the Cidemu name. It installs as a new app (`com.cidix.ci
 - Vulkan: Command buffers are reset on a separate thread, and acquired swapchain images are waited on in the next submit.
 - Vulkan: With the GamePad on a second screen, each screen only waits for its own previous frame. This brings dual screen play back to a full 60 FPS where it lost frames before.
 - Latte: Decoded index data is kept across frames, and the draw call tick is updated once per frame.
+- LEGO City Undercover: The default game profile turns off the accurate shader multiplication, which saves about 0.3 to 0.4 W on the AYN Thor without visible differences in the tested scenes. The first start afterwards compiles the shaders again.
 - Idle emulated cores and the GPU thread sleep instead of spinning, so the CPU can clock down.
 - Controllers are polled every 8 ms instead of every millisecond, and the process of the game list doesn't poll them at all while a game runs. Games read the controller state directly, so input latency stays the same.
 - Recompiler: Shorter AArch64 code for memory and logical instructions, branches on condition flags, the remaining cycles kept in a register, native calls and returns for guest functions, and recompiled functions packed into shared executable memory.
