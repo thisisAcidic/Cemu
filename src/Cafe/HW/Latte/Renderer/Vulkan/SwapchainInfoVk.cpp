@@ -370,8 +370,28 @@ VkSurfaceFormatKHR SwapchainInfoVk::ChooseSurfaceFormat(const std::vector<VkSurf
 	return formats[0];
 }
 
+VkExtent2D SwapchainInfoVk::GetScaledExtent(VkExtent2D windowExtent, Vector2i imageSize)
+{
+	if (imageSize.x <= 0 || imageSize.y <= 0)
+		return windowExtent;
+	const float scale = std::min((float)windowExtent.width / imageSize.x, (float)windowExtent.height / imageSize.y);
+	if (scale <= 1.0f)
+		return windowExtent;
+	return {(uint32)std::lround(windowExtent.width / scale), (uint32)std::lround(windowExtent.height / scale)};
+}
+
 VkExtent2D SwapchainInfoVk::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const
 {
+#if BOOST_PLAT_ANDROID
+	// the compositor scales a smaller swapchain to the window, usually with the display hardware instead of the GPU
+	if (capabilities.currentExtent.width != std::numeric_limits<uint32>::max())
+	{
+		VkExtent2D extent = GetScaledExtent(capabilities.currentExtent, m_imageSizeForScaling);
+		extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+		extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+		return extent;
+	}
+#endif
 	if (capabilities.currentExtent.width != std::numeric_limits<uint32>::max())
 		return capabilities.currentExtent;
 
