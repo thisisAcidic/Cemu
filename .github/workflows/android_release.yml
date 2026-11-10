@@ -49,7 +49,7 @@ jobs:
           echo "EMULATOR_VERSION_MAJOR=${BASH_REMATCH[1]}" >> $GITHUB_ENV
           echo "EMULATOR_VERSION_MINOR=${BASH_REMATCH[2]}" >> $GITHUB_ENV
 
-      - name: Build Cemu
+      - name: Build Cidemu
         env:
           ANDROID_STORE_FILE_BASE64: ${{ secrets.ANDROID_STORE_FILE_BASE64 }}
           ANDROID_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
@@ -66,12 +66,19 @@ jobs:
           base64 --decode <<< "${ANDROID_STORE_FILE_BASE64}" > store.jks
           export ANDROID_STORE_FILE=$(pwd)/store.jks
 
-          ./gradlew assembleFork
+          ./gradlew assembleRelease
 
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          apk=cidemu-${EMULATOR_VERSION_MAJOR}.${EMULATOR_VERSION_MINOR}.apk
-          cp src/android/app/build/outputs/apk/fork/*.apk $apk
-          gh release create "$GITHUB_REF_NAME" $apk --title "Cidemu ${EMULATOR_VERSION_MAJOR}.${EMULATOR_VERSION_MINOR}" --generate-notes
+          version=${EMULATOR_VERSION_MAJOR}.${EMULATOR_VERSION_MINOR}
+          apk=cidemu-$version.apk
+          cp src/android/app/build/outputs/apk/release/*.apk $apk
+          # release notes are the section of CHANGELOG.md for this version
+          awk -v heading="## Cidemu $version" '$0 == heading { found = 1; next } found && /^## / { exit } found' CHANGELOG.md > release-notes.md
+          if [[ ! -s release-notes.md ]]; then
+            echo "CHANGELOG.md has no section for Cidemu $version"
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" $apk --title "Cidemu $version" --notes-file release-notes.md
