@@ -455,3 +455,11 @@ Thor vom Strom getrennt, ClusterTune-Limits aktiv (Prime 2093, Mitte 2054, GPU 5
 
 - Ein Lauf. Im Akkubetrieb fällt das Rauschen durch das versteckte Nachladen weg, die Werte sind direkt mit dem Ausgangspunkt vergleichbar.
 - Ziel „unter 6 W“: 6,07 W, also knapp darüber.
+
+## Frontends (Cocoon, ES-DE)
+
+- Frontends starten die Emulations-Activity direkt mit der Spieldatei als Content-URI. Für Cidemu: `dev.cidix.cidemu/info.cemu.cemu.emulation.EmulationActivity`, voller Klassenname, weil die Activity im Paket `info.cemu.cemu` liegt. Auf dem Thor per `am start` getestet, ohne Action (wie Cocoon) und mit VIEW (wie ES-DE): LCU bootet.
+- Cocoon 3.11: Player nur aus dem Katalog (KansoMirai/CocoonFE, `android/*.yaml`), eigene Player in der App noch nicht (IDs `custom.` sind reserviert). Import von Daijishō-Plattformdateien geht aber: `dist/frontends/NintendoWiiU-Cidemu.json` (ab 0.3 als Release-Asset). Auf dem Thor importiert, Cidemu ist Standard-Player der Wii U, CEMU bleibt wählbar.
+- Katalog-PR: KansoMirai/CocoonFE#620.
+- ES-DE: `custom_systems/es_find_rules.xml` mit Cidemu vor Cemu in der CEMU-Regel, dokumentiert im README, mangels ES-DE auf dem Thor nicht getestet.
+- App-ID ab 0.3 `dev.cidix.cidemu` (Domain cidix.dev).
