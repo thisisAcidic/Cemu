@@ -5,8 +5,8 @@ import android.hardware.display.DisplayManager
 import android.view.Display
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -528,22 +528,14 @@ private fun SurfacePresentation(
     holderCallback: SurfaceHolder.Callback,
     onSurfaceChanged: () -> Unit = {},
 ) {
-    val context = LocalContext.current
+    val activity = LocalActivity.current ?: return
     val currentOnSurfaceChanged by rememberUpdatedState(onSurfaceChanged)
 
-    // presentations stay on their display while the activity is in the background, so only show them while it is started
+    // the activity on the other display stays there while this one is in the background, so only show it while started
     LifecycleStartEffect(displayId, isTV) {
-        val display = context.getSystemService(DisplayManager::class.java).getDisplay(displayId)
-        val presentation = display?.let {
-            EmulationPresentation(context, it, isTV, holderCallback) { currentOnSurfaceChanged() }
-        }
-        try {
-            presentation?.show()
-        } catch (_: WindowManager.InvalidDisplayException) {
-            // the display went away before the presentation could be shown
-        }
+        EmulationDisplays.show(activity, displayId, EmulationDisplays.Content(isTV, holderCallback) { currentOnSurfaceChanged() })
         onStopOrDispose {
-            presentation?.dismiss()
+            EmulationDisplays.hide(displayId)
         }
     }
 }
