@@ -48,6 +48,7 @@ struct
 	};
 	std::unordered_map<CacheKey, CacheEntry, CacheKeyHash> entries;
 	uint32 epoch{1};
+	uint32 lastTrimFrame{};
 }LatteIndexCache{};
 
 constexpr size_t INDEX_CACHE_MAX_ENTRIES = 2048;
@@ -105,6 +106,17 @@ static void LatteIndices_trimCache()
 	if (LatteIndexCache.entries.size() < INDEX_CACHE_MAX_ENTRIES)
 		return;
 	const uint32 frame = LatteGPUState.frameCounter;
+	// scan at most once per frame. If a single frame uses even more index data than twice the limit, start over
+	if (frame == LatteIndexCache.lastTrimFrame)
+	{
+		if (LatteIndexCache.entries.size() < INDEX_CACHE_MAX_ENTRIES * 2)
+			return;
+		for (auto& it : LatteIndexCache.entries)
+			g_renderer->indexData_releaseIndexMemory(it.second.indexAllocation);
+		LatteIndexCache.entries.clear();
+		return;
+	}
+	LatteIndexCache.lastTrimFrame = frame;
 	for (auto it = LatteIndexCache.entries.begin(); it != LatteIndexCache.entries.end();)
 	{
 		if (frame - it->second.lastUsedFrame > 2)
