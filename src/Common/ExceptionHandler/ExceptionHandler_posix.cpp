@@ -15,6 +15,7 @@
 
 #if BOOST_PLAT_ANDROID
 #include <boost/stacktrace.hpp>
+#include <dlfcn.h>
 #endif
 
 #if BOOST_OS_LINUX && !BOOST_PLAT_ANDROID
@@ -65,6 +66,29 @@ void DemangleAndPrintBacktrace(char** backtrace, size_t size)
 }
 #endif
 
+#if BOOST_PLAT_ANDROID && defined(__aarch64__)
+static std::string DescribeHostAddress(uint64 address)
+{
+	Dl_info info{};
+	if (dladdr((void*)address, &info) == 0 || !info.dli_fname)
+		return fmt::format("{:016x}", address);
+	const char* moduleName = strrchr(info.dli_fname, '/');
+	return fmt::format("{:016x} ({}+0x{:x})", address, moduleName ? moduleName + 1 : info.dli_fname, address - (uint64)info.dli_fbase);
+}
+
+// the unwinder can't walk through recompiled code, so the registers are often the only hint where a crash happened
+static void LogHostRegisters(siginfo_t* info, void* context)
+{
+	const auto& mc = ((ucontext_t*)context)->uc_mcontext;
+	CrashLog_WriteLine(fmt::format("Fault address: {:016x} code {}", (uint64)info->si_addr, info->si_code));
+	CrashLog_WriteLine(fmt::format("pc {}", DescribeHostAddress(mc.pc)));
+	CrashLog_WriteLine(fmt::format("lr {}", DescribeHostAddress(mc.regs[30])));
+	CrashLog_WriteLine(fmt::format("sp {:016x}", (uint64)mc.sp));
+	for (int i = 0; i < 30; i += 2)
+		CrashLog_WriteLine(fmt::format("x{:<2} {:016x}  x{:<2} {:016x}", i, (uint64)mc.regs[i], i + 1, (uint64)mc.regs[i + 1]));
+}
+#endif
+
 // handle signals that would dump core, print stacktrace and then dump depending on config
 void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
 {
@@ -95,6 +119,9 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
 	}
 
 #if BOOST_PLAT_ANDROID
+#if defined(__aarch64__)
+	LogHostRegisters(info, context);
+#endif
     CrashLog_WriteLine(to_string(boost::stacktrace::stacktrace()));
 #else
 	void* backtraceArray[128];
