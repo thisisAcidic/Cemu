@@ -3402,6 +3402,9 @@ void VulkanRenderer::NotifyLatteCommandProcessorIdle()
 {
 	if (m_submitOnIdle)
 		SubmitCommandBuffer();
+	// the UI thread waits until the pad swapchain is gone, which can't wait for the next swap while the title is paused
+	if (m_destroyPadSwapchainNextSwap.test())
+		UpdatePadSwapchain();
 }
 
 void VulkanBenchmarkPrintResults();
