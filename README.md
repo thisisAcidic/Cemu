@@ -33,7 +33,27 @@ In the LEGO City Undercover harbor scene with the 60 FPS graphic pack on the AYN
 
 APKs are on the [Releases](https://github.com/thisisAcidic/Cemu/releases) page.
 
-Cidemu installs as its own app (`com.cidix.cidemu`) next to the Cemu Android port, so both can be used side by side. To take your data over, copy the contents of the Cemu data folder into the Cidemu data folder. Both apps show their folder in the system file manager, and "Open Cidemu folder" in the game list menu opens it.
+## Getting started
+
+1. Install the APK. Cidemu installs as its own app (`com.cidix.cidemu`), next to the Cemu Android port if you have it.
+2. Open *Settings > General settings > Add game path* and pick the folder with your games. Cidemu finds `.wua`, `.wuhb`, `.wud`, `.wux`, `.iso`, `.rpx` and `.elf` files in it and in its subfolders.
+3. Encrypted disc images (`.wud`, `.wux`) need their key in `keys.txt` in the Cidemu folder. *Open Cidemu folder* in the menu of the game list opens it in the system file manager. `otp.bin` and `seeprom.bin` go there as well if you want to use online features.
+4. Tap a game to start it. The first start of a game compiles its shaders, later starts reuse them.
+
+### Coming from the Cemu Android port
+
+Your saves, graphic packs, game profiles and shader caches can be taken along. Both apps show their data folder in the system file manager, so copy the contents of the Cemu folder (`mlc01`, `graphicPacks`, `gameProfiles`, `shaderCache`, `controllerProfiles`, `settings.xml`, `keys.txt`, `otp.bin`, `seeprom.bin`) into the Cidemu folder while Cidemu is closed. Add your game path once more afterwards, Android grants folder access to each app separately.
+
+### Settings for handhelds
+
+- *Settings > General settings > GamePad screen frame rate*: *Automatic* only redraws the GamePad image when it changes and at most 30 times per second, which saves power in most games. Use *Always full* if a game shows something on the GamePad that has to move smoothly.
+- On dual screen devices the GamePad image goes to the second screen. *Swap screens* in the same place swaps the TV and GamePad images.
+- *Shader multiplication accuracy* in a game's profile (long press the game, *Edit game profile*) is on by default because some games need it. Turning it off makes the GPU work noticeably less, in LEGO City Undercover about 0.3 to 0.4 W less without visible differences. If a game shows graphical errors afterwards, turn it back on.
+- *Settings > Graphics settings > Custom drivers* installs Adreno drivers such as Turnip. The system driver is the default and usually the best choice on Snapdragon 8 Gen 2 devices.
+
+## Reporting problems
+
+Open an [issue](https://github.com/thisisAcidic/Cemu/issues/new/choose) and attach the log: *Share log file* in the menu of the game list shares the `log.txt` of the last run. It helps a lot to know whether the same problem happens in the Cemu Android port.
 
 ## Building
 
