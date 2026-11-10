@@ -37,14 +37,15 @@ The Cemu Android port with the Cemu core of November 2026 at stock clocks, the s
 | | Cemu Android port, stock clocks | Cidemu, recommended limits |
 |---|---|---|
 | Average frame rate | 55.0 FPS | 59.9 FPS |
-| Frames within 16.7 ms | 18 % | 54 % |
+| Frames within 16.7 ms | 18 % | 52 % |
 | 99th percentile frame time | 23.8 ms | 18.1 ms |
-| Power of the whole device | 9.56 W | 6.78 W (−29 %) |
-| Hottest CPU core, peak / average | 95 °C / 86 °C | 73 °C / 64 °C |
-| GPU temperature, peak | 71 °C | 60 °C |
-| Prime core clock, average | 3.19 GHz | 1.97 GHz |
+| Frames over 50 ms | 0 | 0 |
+| Power of the whole device, on battery | 9.56 W | 6.07 W (−37 %) |
+| Hottest CPU core, peak / average | 95 °C / 86 °C | 70 °C / 62 °C |
+| GPU temperature, peak | 71 °C | 57 °C |
+| Prime core clock, average | 3.19 GHz | 1.95 GHz |
 
-The Cidemu numbers are the average of two runs of the final build, still with the accurate shader multiplication. The LEGO City Undercover profile of Cidemu 0.2 turns it off, which saves another 0.3 to 0.4 W. The Cemu Android port was measured as battery power, Cidemu as the power the device draws over USB on the charger, which reads about 0.3 W higher than battery power, so the difference is if anything a little larger.
+Both were measured the same way, as the power drawn from the battery with the charger unplugged. The Cidemu column is Cidemu 0.2 with its LEGO City Undercover profile.
 
 ### Individual changes
 
@@ -99,7 +100,7 @@ Cidemu was tuned on the AYN Thor with lower clock limits, set with the ClusterTu
 | Cluster 0 (little cores) | unchanged |
 | GPU | 550 MHz |
 
-Together with the changes in Cidemu, LEGO City Undercover keeps a steady 60 FPS with these limits, while the device draws about 2.8 W less and stays more than 20 °C cooler than the Cemu Android port at stock clocks, see [Measurements](#measurements). Games that need more performance may drop frames with them, raise the limits again for those.
+Together with the changes in Cidemu, LEGO City Undercover keeps a steady 60 FPS with these limits, while the device draws about 3.5 W less and stays about 25 °C cooler than the Cemu Android port at stock clocks, see [Measurements](#measurements). Games that need more performance may drop frames with them, raise the limits again for those.
 
 ## Reporting problems
 
