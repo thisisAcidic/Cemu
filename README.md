@@ -102,6 +102,53 @@ Cidemu was tuned on the AYN Thor with lower clock limits, set with the ClusterTu
 
 Together with the changes in Cidemu, LEGO City Undercover keeps a steady 60 FPS with these limits, while the device draws about 3.5 W less and stays about 25 °C cooler than the Cemu Android port at stock clocks, see [Measurements](#measurements). Games that need more performance may drop frames with them, raise the limits again for those.
 
+## Starting games from Cocoon, ES-DE and other frontends
+
+Frontends start Cidemu directly with the game file, the same way as the Cemu Android port. Only the app id is different, so the frontend needs an entry for Cidemu. The frontend also gives Cidemu access to the file, so no game path has to be set up in Cidemu for this. `keys.txt` for encrypted disc images still goes into the Cidemu folder.
+
+### Cocoon
+
+Cocoon takes its emulators from its own player catalogue and updates it by itself. As soon as Cidemu's entry is in it:
+
+1. For all Wii U games: *Settings > Library & Data > Platforms > Nintendo Wii U > Default Player > Cidemu*.
+2. For a single game: select the game, press *Y > Edit* and set *Player* to *Cidemu*.
+
+### ES-DE
+
+ES-DE finds Cemu through a find rule. Save this as `ES-DE/custom_systems/es_find_rules.xml` and restart ES-DE. Its *Cemu (Standalone)* entry then starts Cidemu, or the Cemu Android port while Cidemu isn't installed:
+
+```xml
+<?xml version="1.0"?>
+<ruleList>
+    <emulator name="CEMU">
+        <rule type="androidpackage">
+            <entry>dev.cidix.cidemu/info.cemu.cemu.emulation.EmulationActivity</entry>
+            <entry>info.cemu.cemu/info.cemu.cemu.emulation.EmulationActivity</entry>
+        </rule>
+    </emulator>
+</ruleList>
+```
+
+If the file already exists, add the `<emulator>` block to its `<ruleList>`.
+
+### Other frontends
+
+Frontends that let you set up an emulator yourself can start Cidemu with these values:
+
+| Setting | Value |
+|---|---|
+| Package | `dev.cidix.cidemu` |
+| Activity | `info.cemu.cemu.emulation.EmulationActivity` |
+| Game | the game file as content URI in the intent data |
+| Action | none, or `android.intent.action.VIEW` |
+| File types | `.wua`, `.wuhb`, `.wud`, `.wux`, `.iso`, `.rpx`, `.elf` |
+
+The activity needs its full name. The short form `.emulation.EmulationActivity` doesn't work, because the activity lives in the `info.cemu.cemu` package and not in `dev.cidix.cidemu`. As `am start` arguments with the usual placeholder for the game file:
+
+```
+-n dev.cidix.cidemu/info.cemu.cemu.emulation.EmulationActivity -a android.intent.action.VIEW -d {file.uri} --activity-clear-task --activity-clear-top
+```
+
 ## Reporting problems
 
 Open an [issue](https://github.com/thisisAcidic/Cidemu/issues/new/choose) and attach the log: *Share log file* in the menu of the game list shares the `log.txt` of the last run. It helps a lot to know whether the same problem happens in the Cemu Android port.

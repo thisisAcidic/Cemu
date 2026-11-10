@@ -3,6 +3,7 @@
 ## Cidemu 0.3
 
 - The app id is now `dev.cidix.cidemu`, after the cidix.dev domain. Cidemu 0.3 installs as a new app next to 0.2, copy the data folder over once (see the README) and uninstall 0.2 afterwards.
+- The README explains how to start games in Cidemu from Cocoon, ES-DE and other frontends.
 
 ## Cidemu 0.2
 
