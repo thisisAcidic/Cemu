@@ -5,6 +5,7 @@
 The first release under the Cidemu name. It installs as a new app (`com.cidix.cidemu`) next to Cemu and next to the 0.1 test build, so data has to be copied over once (see the README).
 
 - New name and icon. The About screen links to the source code and credits Cemu and the Cemu Android port.
+- The game list tells you where to add your game folder while none is set.
 - Vulkan: Render target clears happen inside the next render pass, which saves a large part of the GPU work on mobile GPUs.
 - Vulkan: Consecutive draws to compatible framebuffers stay in one render pass.
 - Vulkan: The display hardware scales the image up to the screen.
@@ -14,7 +15,7 @@ The first release under the Cidemu name. It installs as a new app (`com.cidix.ci
 - Idle emulated cores and the GPU thread sleep instead of spinning, so the CPU can clock down.
 - Recompiler: Shorter AArch64 code for memory and logical instructions, branches on condition flags, the remaining cycles kept in a register, native calls and returns for guest functions, and recompiled functions packed into shared executable memory.
 - Second screens: The TV and GamePad images can be shown on secondary displays, with an option to swap them.
-- GamePad: The GamePad image is updated at a lower rate when it doesn't need the full one (Settings > General > GamePad screen frame rate, default automatic).
+- GamePad: The GamePad image is updated at a lower rate when it doesn't need the full one (Settings > General settings > GamePad screen frame rate, default automatic).
 - Fixed the scissor after drawing the GamePad image and after tracking GamePad image changes.
 - Fixed the Android surface not being recreated when the main window changed.
 - Custom drivers: the whole driver package is copied, not only the library.
