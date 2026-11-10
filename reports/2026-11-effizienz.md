@@ -399,3 +399,15 @@ Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Buil
 - Ursache für die +0,07 W des Release-Builds gegenüber dem Profil-Build: `InputManager` startet seinen Abfrage-Thread (`Input_update`, 1 ms Takt) in jedem Prozess. Im Release-Build läuft das Spiel in `:EmulationProcess`, der Prozess der Spieleliste fragte trotzdem weiter ab, rund 2 % eines Kerns und 1000 Weckvorgänge pro Sekunde.
 - Fix (`ab9b0a64`): Die Abfrage pausiert, solange im Prozess keine Activity gestartet ist. In Builds mit einem Prozess läuft sie während des Spiels weiter, weil die Emulations-Activity gestartet ist.
 - Offen: Im Emulationsprozess kostet derselbe Thread ähnlich viel. Android-Controller liefern ihre Werte per Ereignis, ein längeres Intervall oder ereignisgesteuerte Updates wären ein eigenes Experiment.
+
+### Messreihe ab1: alter Stand, Fixes, Display-Activity (Release-Builds, Hafen, je zwei Läufe im Wechsel)
+
+| Stand | Leistung | GPU-Arbeit | FPS | p99 |
+|---|---|---|---|---|
+| alter Stand (`cidemu-release-test`) | 6,83 / 6,93 W (6,88) | 198 / 182 | 59,9 | 18,1–18,2 ms |
+| mit Review-Fixes | 7,05 / 7,01 W (7,03) | 188 / 187 | 59,9 | 18,2–18,4 ms |
+| mit Fixes und Display-Activity | 6,75 / 6,76 W (6,76) | 180 / 188 | 59,7–59,9 | 18,3–19,2 ms |
+
+- Display-Activity: −0,27 W gegenüber den Fixes allein, Cocoon zeichnet 0 statt rund 21 Bilder/s.
+- Die Fixes liegen bei gleicher GPU-Arbeit und gleichen Thread-Lasten 0,15 W über dem alten Stand. Keinem Thread zuzuordnen, vermutlich Rauschen der versteckten Akku-Nachladung (Akku „voll“, 0 mA).
+- Absolutwerte liegen an diesem Nachmittag rund 0,3 W über denen vom Vormittag (gleiches APK). Nur Vergleiche innerhalb einer Reihe zählen.
