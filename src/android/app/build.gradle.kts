@@ -51,7 +51,7 @@ android {
     compileSdk = 36
     ndkVersion = "29.0.14206865"
     defaultConfig {
-        applicationId = "com.cidix.cidemu"
+        applicationId = "dev.cidix.cidemu"
         minSdk = 30
         targetSdk = 35
         versionName = getVersionName()

@@ -73,7 +73,7 @@ APKs are on the [Releases](https://github.com/thisisAcidic/Cidemu/releases) page
 
 ## Getting started
 
-1. Install the APK. Cidemu installs as its own app (`com.cidix.cidemu`), next to the Cemu Android port if you have it.
+1. Install the APK. Cidemu installs as its own app (`dev.cidix.cidemu`), next to the Cemu Android port if you have it.
 2. Open *Settings > General settings > Add game path* and pick the folder with your games. Cidemu finds `.wua`, `.wuhb`, `.wud`, `.wux`, `.iso`, `.rpx` and `.elf` files in it and in its subfolders.
 3. Encrypted disc images (`.wud`, `.wux`) need their key in `keys.txt` in the Cidemu folder. *Open Cidemu folder* in the menu of the game list opens it in the system file manager. `otp.bin` and `seeprom.bin` go there as well if you want to use online features.
 4. Tap a game to start it. The first start of a game compiles its shaders, later starts reuse them.
