@@ -374,6 +374,7 @@ private:
 
 		// rendertarget
 		CachedFBOVk* activeFBO{}; // the FBO active for the emulated GPU
+		CachedFBOVk* requestedFBO{}; // the FBO the emulated GPU set, activeFBO can be a running render pass that contains all of its attachments
 
 		// command buffer
 		VkCommandBuffer currentCommandBuffer{};
@@ -559,6 +560,7 @@ private:
 
 	void draw_setRenderPass();
 	void draw_endRenderPass();
+	void draw_keepRenderPassForSubset();
 	// statistics for vk.stats: why render passes end, how many begin
 	void draw_countRenderPassEnd(uint32 reason) { if (m_state.activeRenderpassFBO) m_renderPassEndStats[reason]++; }
 	uint64 m_renderPassEndStats[17]{};
