@@ -357,3 +357,18 @@ Größere Software-Hebel für später:
 - JIT: tote Speicherungen von CR0 und flüchtigen Registern an `blr`/`bl` weglassen (CR0-Bytes sind 16 % aller Kontextzugriffe), feste Host-Register für r1/r2/r13. Geschätzt 3–8 % des Hauptkerns.
 - Turnip: verdrängter GPU-Thread und Taktsteuerung (siehe oben), ohne Root kaum lösbar.
 - DDR-Takt und Transparent Huge Pages: Firmware/Kernel, nur mit Root.
+
+## Finaler Stand mit und ohne genaue Multiplikation (p11, p12)
+
+dev mit GamePad „Automatisch“, frischer SPIR-V-Cache für alle Läufe:
+
+| Variante | Läufe | Mittel | GPU-Arbeit | GPU-Takt | FPS |
+|---|---|---|---|---|---|
+| genau (Standard) | 6,57 / 6,53 W | 6,55 W | 381 / 358 Mcyc/s | 494 / 466 MHz | 59,9 / 59,8 |
+| schnell (Spielprofil) | 6,39 / 6,17 W | **6,28 W** | 308 / 299 Mcyc/s | 420 / 401 MHz | 59,8 / 59,9 |
+| Clamp (exp/clamp-mul) | 6,55* / 6,39 W | 6,39 W | 367* / 329 Mcyc/s | 456* / 429 MHz | 59,8 / 59,9 |
+
+\\* erster Lauf mit neuen Pipelines, verfälscht.
+
+- **Mit der Spielprofil-Option: 7,65 → 6,28 W (−1,37 W, −18 %).**
+- Clamp-Variante: Beide Faktoren werden auf ±FLT_MAX begrenzt, dann ist 0 × ∞ = 0 ohne Auswahl, und der Compiler sieht eine normale Multiplikation. Etwa die Hälfte der Ersparnis bei fast gleicher Genauigkeit. Abweichungen: NaN × x ≠ 0 ergibt ±∞ statt NaN, ∞ × |x| < 1 ergibt einen großen endlichen Wert statt ∞. Nur ein sauberer Lauf, nicht in dev.
