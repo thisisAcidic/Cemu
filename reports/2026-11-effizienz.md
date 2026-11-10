@@ -427,3 +427,13 @@ Branch `build/cidemu-release` (auf dev), App-ID `com.cidix.cidemu`, Release-Buil
 - Unübersprungenes Intro (Ladebildschirm mit drehendem Abzeichen, Zwischensequenzen mit Radio-Untertiteln, Schiff, Chase, Platz mit Menge) mit genauer und mit schneller Multiplikation aufgenommen, die schnelle nach einem Aufwärmlauf für den Shader-Cache.
 - Kein sichtbarer Unterschied. Die Aufnahmen sind um etwa 10 s versetzt, weil die schnelle Variante schneller lädt. Das Abzeichen zeigt in beiden Varianten bronzene Vorder- und silberne Rückseite.
 - Folge: Das mitgelieferte Spielprofil von LCU (EU `0005000010101b00`, USA `0005000010101a00`) setzt `accurateShaderMul = false`, wie Cemu es für Super Mario 3D World, Captain Toad und Xenoblade X tut. Gemessen waren das −0,27 bis −0,39 W im Hafen.
+
+### Gerätetests des finalen Release-Builds (Thor, `com.cidix.cidemu`)
+
+- Erststart ohne Daten, Spielordner über den System-Dialog freigegeben, LCU erkannt und gestartet.
+- Flackertest: 0 Flacker-Frames (vor und nach den Review-Fixes).
+- Hintergrund und Rückkehr: kein ANR, Spiel läuft weiter, Cocoon zeichnet im Hintergrund wieder und hält beim Zurückkehren an.
+- Spiel beenden über das Seitenmenü: Emulationsprozess endet, Spieleliste oben, Cocoon unten zurück, kein Absturz.
+- About: Credits, Quellcode-Link und Lizenzdialog der nativen Bibliotheken.
+- Leere Spieleliste ohne Spielpfad: Hinweis mit Knopf zu den Einstellungen.
+- Controller-Abfrage: Prozess der Spieleliste 0 Ticks während des Spiels, Emulationsprozess 3 Ticks in 10 s.
