@@ -291,3 +291,69 @@ Hafen, Untertakt (Prime 2093, Mitte 2054 MHz), GPU-Limit 550 MHz, System-Treiber
 - **Index-Cache:** Hatte 8 Einträge und wurde bei jedem fertigen Command-Buffer geleert, fast jeder Draw wandelte seine Indizes neu um (8 % des GPU-Threads). Jetzt bleiben umgewandelte Indizes über Bilder erhalten. Nach einem GPU-Warten wird ein Eintrag nur wiederverwendet, wenn eine Prüfsumme der Gastdaten gleich ist. Flackertest sauber. A-B-A-B bei vollem Akku: dev2 7,84/7,28 W, Index-Cache 7,20/6,83 W (Drift berücksichtigt etwa −0,1 bis −0,3 W).
 - **Command-Buffer-Reset auf eigenem Thread:** Ein Pool pro Command-Buffer, fertige Buffer setzt ein Thread auf den kleinen Kernen zurück (vorher 6 % des GPU-Threads).
 - **Weniger Submits:** Für jedes geholte Swapchain-Bild (TV, GamePad) gab es einen eigenen Submit, nur um auf das Bild zu warten. Das Warten hängt jetzt am nächsten regulären Submit (Stufe Color-Attachment-Output).
+
+## Gesamtergebnis der Nacht (schneller Leistungslogger, 10.11. 05:00–05:20)
+
+Hafen, Untertakt, GPU-Limit 550 MHz, System-Treiber, am Ladegerät bei vollem Akku, abwechselnd gemessen. Leistung = USB-Eingang, gemittelt über ca. 300 Werte pro Szene (`power_log.py`), zwei gleiche Läufe liegen damit nur noch ±0,05 W auseinander.
+
+| Lauf | Stand | Leistung | FPS | p99 | ≤16,7 ms | GPU-Arbeit | GPU-Thread | Szene |
+|---|---|---|---|---|---|---|---|---|
+| p6-1 | alter dev | 7,58 W | 59,3 | 21,7 ms | 48 % | 516 Mcyc/s | 81 % | 67,7 °C |
+| p6-2 | neuer dev | 6,61 W | 59,9 | 18,1 ms | 51 % | 357 Mcyc/s | 69 % | 62,9 °C |
+| p6-3 | alter dev | 7,72 W | 58,9 | 23,1 ms | 46 % | 510 Mcyc/s | 82 % | 68,2 °C |
+| p6-4 | neuer dev | 6,65 W | 59,9 | 18,1 ms | 51 % | 383 Mcyc/s | 70 % | 64,2 °C |
+
+- **Mittel: 7,65 W → 6,63 W, −1,02 W (−13 %)**, 4,4 °C kühler, FPS gepinnt bei 59,9, p99 von 22,4 auf 18,1 ms.
+- Neuer dev = Render-Pass-Wiederverwendung, verzögerte Clears mit LOAD_OP_CLEAR, Hochskalierung durch den Display-Controller, Index-Cache, Command-Buffer-Reset auf eigenem Thread, weniger Submits.
+- Einzelbeitrag der drei GPU-Thread-Änderungen (p5): 6,93 → 6,76 W.
+- Das Ziel unter 6 W ist damit noch nicht erreicht, es fehlen rund 0,6 W.
+- Zweite unabhängige Serie mit dem finalen dev inkl. GamePad „Automatisch“ (p10): alter dev 7,78 / 7,52 W, neuer dev 6,69 / 6,60 W, also wieder **7,65 → 6,65 W**. FPS 59,9 / 59,8, p99 18,4 / 18,2 ms, Szene 62,6 / 60,5 °C.
+- Kürzeres Spinnen vor dem Schlafen (20 statt 50 µs, p9): 6,62 gegen 6,70 W, innerhalb der Streuung. Bleibt bei 50 µs.
+- Format-Prüfung für Clears im Render-Pass (View-Format = Bildformat): weiterhin 18,6 Clears pro Bild im Pass, 1 separat. In dev.
+
+## GamePad-Bildrate, jetzt in dev (feature/gamepad-frame-rate)
+
+Mit dem schnellen Logger messbar (neuer dev, Modus per Mess-Override):
+
+| Modus | Leistung | FPS | GPU-Arbeit |
+|---|---|---|---|
+| Voll | 6,75 W | 59,9 | 381 Mcyc/s |
+| Automatisch (30 FPS, Pause bei unverändertem Bild) | 6,57 W | 59,9 | 367 Mcyc/s |
+| Niedrig (10 FPS) | 6,54 W | 59,9 | 349 Mcyc/s |
+
+- „Automatisch“ spart 0,18 W bei flüssiger Karte. Die frühere Messung (r21) sah keinen Gewinn, weil 8 Messwerte pro Szene zu wenig waren. Branch in dev gemergt, Standard ist „Automatisch“.
+
+## Was die CPU-Takte bestimmt
+
+- In allen Läufen stehen Prime- und Mittelkerne in der Szene fast immer auf ihrer ClusterTune-Obergrenze (2092 bzw. 2054 MHz), auch mit Turnip, wo der GPU-Thread nur 57 % Last hat.
+- WALT auf dem Thor: Colocation (zusammengehörige Threads der Vordergrund-App werden gemeinsam bewertet), Busy-Hysterese 8,5 ms auf allen Kernen, Input-Boost 1,23 GHz auf den kleinen Kernen. Systemeinstellungen, ohne Root nicht änderbar.
+- Folge: Weniger CPU-Arbeit spart nur linear Energie, der Takt bleibt oben. **Die ClusterTune-Obergrenzen sind jetzt der wirksamste CPU-Hebel.** Last bei 2092/2054 MHz: Hauptkern 80 %, GPU-Thread 69 %, Kern 2 44 %. Es gibt also Luft für die nächstniedrigeren Stufen (Prime 1977 oder 1843 MHz, Mitte 1920 oder 1785 MHz). Das ist eine Einstellung des Nutzers.
+- Transparent Huge Pages sind im Kernel aus („never“), große Seiten für den Gastspeicher gehen ohne Root nicht.
+
+## Genaue Shader-Multiplikation: Leistung (p8)
+
+Neuer dev, beide Varianten mit frisch übersetztem SPIR-V-Cache:
+
+| Lauf | Variante | Leistung | FPS | p99 | GPU-Arbeit | GPU-Takt |
+|---|---|---|---|---|---|---|
+| p8-1 | genau | 6,63 W | 59,5 | 21,4 ms | 369 Mcyc/s | 484 MHz |
+| p8-2 | schnell | 6,85 W | 59,2 | 25,0 ms | 308 Mcyc/s | 401 MHz |
+| p8-3 | genau | 6,75 W | 59,9 | 18,1 ms | 365 Mcyc/s | 475 MHz |
+| p8-4 | schnell | **6,30 W** | 59,9 | 18,2 ms | 298 Mcyc/s | 420 MHz |
+
+- p8-2 ist verfälscht: Die neuen SPIR-V-Shader zwingen den Treiber, alle Pipelines während des Spielens neu zu übersetzen (zwei Ruckler über 50 ms, CPU-Last). Ab dem zweiten Start (p8-4) ist der Treiber-Cache warm.
+- **Ohne genaue Multiplikation: −0,39 W, GPU-Arbeit −19 %, GPU meist bei 401–420 MHz.** Im Hafen keine sichtbaren Unterschiede. Andere Level sind ungeprüft.
+
+## Weg unter 6 W
+
+Stand dev (`7c11af89`, inkl. GamePad „Automatisch“): rund 6,5 W am Ladegerät. Was noch fehlt, ist eine Entscheidung des Nutzers, kein offener Code:
+
+1. **Spielprofil „Shader multiplication accuracy“ aus** (LCU, Spielprofil in der App): −0,39 W, GPU −19 %. Im Hafen kein sichtbarer Unterschied, andere Level ungeprüft. Der erste Start danach übersetzt alle Shader und Pipelines neu (Ruckler), danach ist es flüssig.
+2. **ClusterTune eine Stufe tiefer:** Prime 1977 statt 2093 MHz, Mitte 1920 statt 2054 MHz. Beide Cluster stehen in der Szene fast immer auf der Obergrenze, die Last liegt bei 80 % (Hauptkern) und 69 % (GPU-Thread), es ist also Luft da. Geschätzt −0,1 bis −0,2 W, nicht gemessen (Systemeinstellung).
+3. **GPU-Limit 475 statt 550 MHz:** Die GPU braucht nach den Änderungen meist 401–475 MHz, 550 MHz kommen nur noch in Spitzen vor.
+
+Größere Software-Hebel für später:
+
+- JIT: tote Speicherungen von CR0 und flüchtigen Registern an `blr`/`bl` weglassen (CR0-Bytes sind 16 % aller Kontextzugriffe), feste Host-Register für r1/r2/r13. Geschätzt 3–8 % des Hauptkerns.
+- Turnip: verdrängter GPU-Thread und Taktsteuerung (siehe oben), ohne Root kaum lösbar.
+- DDR-Takt und Transparent Huge Pages: Firmware/Kernel, nur mit Root.
