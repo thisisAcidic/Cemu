@@ -211,6 +211,8 @@ VKFUNC_DEVICE(vkCmdResetQueryPool);
 VKFUNC_DEVICE(vkCmdBeginQuery);
 VKFUNC_DEVICE(vkCmdEndQuery);
 VKFUNC_DEVICE(vkCmdCopyQueryPoolResults);
+VKFUNC_DEVICE(vkCmdWriteTimestamp);
+VKFUNC_DEVICE(vkGetQueryPoolResults);
 
 // event
 VKFUNC_DEVICE(vkCreateEvent);

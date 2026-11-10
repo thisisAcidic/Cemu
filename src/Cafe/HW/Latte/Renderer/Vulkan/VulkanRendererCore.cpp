@@ -1328,6 +1328,8 @@ void VulkanRenderer::draw_setRenderPass()
 
 	sync_RenderPassLoadTextures(fboVk);
 
+	if (m_gpuTimeQueryPool)
+		gpuTime_mark(gpuTime_describeFBO(fboVk));
 	if (m_featureControl.deviceExtensions.dynamic_rendering)
 	{
 		vkCmdBeginRenderingKHR(m_state.currentCommandBuffer, fboVk->GetRenderingInfo());
@@ -1369,6 +1371,7 @@ void VulkanRenderer::draw_endRenderPass()
 		vkCmdEndRenderingKHR(m_state.currentCommandBuffer);
 	else
 		vkCmdEndRenderPass(m_state.currentCommandBuffer);
+	gpuTime_mark("outside render passes");
 	sync_RenderPassStoreTextures(m_state.activeRenderpassFBO);
 	m_state.activeRenderpassFBO = nullptr;
 }
@@ -1932,6 +1935,7 @@ void VulkanRenderer::draw_endSequence()
 	bool hasReadback = LatteTextureReadback_Update();
 	m_recordedDrawcalls++;
 	m_drawCount++;
+	m_gpuTimeDrawCount++;
 	if (m_recordedDrawcalls >= m_submitThreshold || hasReadback)
 	{
 		SubmitCommandBuffer();

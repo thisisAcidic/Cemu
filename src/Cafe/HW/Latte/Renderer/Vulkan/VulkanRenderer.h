@@ -568,6 +568,23 @@ private:
 	uint64 m_fboChangeStats[7]{};
 	uint64 m_drawCount{};
 
+	// GPU time per render pass with vk.gputime (measurement only)
+	static constexpr uint32 kGpuTimeQueriesPerCommandBuffer = 512;
+	void gpuTime_beginCommandBuffer();
+	void gpuTime_mark(std::string_view label, bool isLast = false);
+	void gpuTime_collect(size_t commandBufferIndex);
+	void gpuTime_print(uint32 frameCount);
+	std::string gpuTime_describeFBO(CachedFBOVk* fbo);
+	VkQueryPool m_gpuTimeQueryPool{};
+	double m_gpuTimeNsPerTick{};
+	uint64 m_gpuTimeDrawCount{};
+	std::vector<std::vector<std::pair<uint32, uint64>>> m_gpuTimeMarks; // per command buffer: label and draw count at each timestamp
+	std::unordered_map<std::string, uint32> m_gpuTimeLabelIndex;
+	std::vector<std::string> m_gpuTimeLabels;
+	std::vector<uint64> m_gpuTimeTicks;
+	std::vector<uint64> m_gpuTimeSegments;
+	std::vector<uint64> m_gpuTimeDraws;
+
 	void draw_beginSequence() override;
 	void draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext) override;
 	void draw_endSequence() override;

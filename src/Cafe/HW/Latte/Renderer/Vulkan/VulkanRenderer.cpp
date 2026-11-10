@@ -2157,6 +2157,7 @@ bool VulkanRenderer::ImguiBegin(bool mainWindow)
 
 	draw_countRenderPassEnd(0); // imgui
 	draw_endRenderPass();
+	gpuTime_mark("imgui");
 	m_state.currentPipeline = VK_NULL_HANDLE;
 
 	ImGui_ImplVulkan_CreateFontsTexture(m_state.currentCommandBuffer);
@@ -2171,6 +2172,7 @@ void VulkanRenderer::ImguiEnd()
 	ImGui::Render();
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_state.currentCommandBuffer);
 	vkCmdEndRenderPass(m_state.currentCommandBuffer);
+	gpuTime_mark("outside render passes");
 
 	// restore viewport and scissor box
 	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
@@ -2247,6 +2249,7 @@ void VulkanRenderer::InitFirstCommandBuffer()
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	vkBeginCommandBuffer(m_state.currentCommandBuffer, &beginInfo);
+	gpuTime_beginCommandBuffer();
 
 	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
 	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &m_state.currentScissorRect);
@@ -2262,6 +2265,7 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 		VkResult fenceStatus = vkGetFenceStatus(m_logicalDevice, m_cmdBufferFences[m_commandBufferSyncIndex]);
 		if (fenceStatus == VK_SUCCESS)
 		{
+			gpuTime_collect(m_commandBufferSyncIndex);
 			ProcessDestructionQueue();
 			m_uniformVarBufferReadIndex = m_cmdBufferUniformRingbufIndices[m_commandBufferSyncIndex];
 			m_commandBufferSyncIndex = (m_commandBufferSyncIndex + 1) % m_commandBuffers.size();
@@ -2307,6 +2311,7 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 
 	occlusionQuery_notifyEndCommandBuffer();
 
+	gpuTime_mark("end", true);
 	vkEndCommandBuffer(m_state.currentCommandBuffer);
 
 	VkSubmitInfo submitInfo = {};
@@ -2369,6 +2374,7 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	vkBeginCommandBuffer(m_state.currentCommandBuffer, &beginInfo);
+	gpuTime_beginCommandBuffer();
 
 	// make sure some states are set for this command buffer
 	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
@@ -3309,8 +3315,133 @@ void VulkanRenderer::NotifyLatteCommandProcessorIdle()
 
 void VulkanBenchmarkPrintResults();
 
+static bool GpuTimeEnabled()
+{
+	static const bool s_enabled = []() { std::error_code ec; return fs::exists(ActiveSettings::GetUserDataPath("vk.gputime"), ec); }();
+	return s_enabled;
+}
+
+void VulkanRenderer::gpuTime_beginCommandBuffer()
+{
+	if (!GpuTimeEnabled())
+		return;
+	if (!m_gpuTimeQueryPool)
+	{
+		VkQueryPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+		poolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+		poolInfo.queryCount = kGpuTimeQueriesPerCommandBuffer * kCommandBufferPoolSize;
+		if (vkCreateQueryPool(m_logicalDevice, &poolInfo, nullptr, &m_gpuTimeQueryPool) != VK_SUCCESS)
+		{
+			cemuLog_log(LogType::Force, "Vulkan: Failed to create the timestamp query pool for vk.gputime");
+			m_gpuTimeQueryPool = VK_NULL_HANDLE;
+			return;
+		}
+		VkPhysicalDeviceProperties properties;
+		vkGetPhysicalDeviceProperties(m_physicalDevice, &properties);
+		m_gpuTimeNsPerTick = properties.limits.timestampPeriod;
+		m_gpuTimeMarks.resize(kCommandBufferPoolSize);
+		cemuLog_log(LogType::Force, "Vulkan: Measuring GPU time per render pass, {} ns per tick", m_gpuTimeNsPerTick);
+	}
+	vkCmdResetQueryPool(m_state.currentCommandBuffer, m_gpuTimeQueryPool, m_commandBufferIndex * kGpuTimeQueriesPerCommandBuffer, kGpuTimeQueriesPerCommandBuffer);
+	m_gpuTimeMarks[m_commandBufferIndex].clear();
+	gpuTime_mark("outside render passes");
+}
+
+// the GPU time between this and the next timestamp is counted for the label
+void VulkanRenderer::gpuTime_mark(std::string_view label, bool isLast)
+{
+	if (!m_gpuTimeQueryPool)
+		return;
+	auto& marks = m_gpuTimeMarks[m_commandBufferIndex];
+	// keep the last query for the end of the command buffer
+	if (marks.size() >= kGpuTimeQueriesPerCommandBuffer - (isLast ? 0 : 1))
+		return;
+	auto it = m_gpuTimeLabelIndex.find(std::string(label));
+	uint32 labelIndex;
+	if (it == m_gpuTimeLabelIndex.end())
+	{
+		labelIndex = (uint32)m_gpuTimeLabels.size();
+		m_gpuTimeLabelIndex.emplace(label, labelIndex);
+		m_gpuTimeLabels.emplace_back(label);
+		m_gpuTimeTicks.emplace_back(0);
+		m_gpuTimeSegments.emplace_back(0);
+		m_gpuTimeDraws.emplace_back(0);
+	}
+	else
+		labelIndex = it->second;
+	vkCmdWriteTimestamp(m_state.currentCommandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_gpuTimeQueryPool, m_commandBufferIndex * kGpuTimeQueriesPerCommandBuffer + (uint32)marks.size());
+	marks.emplace_back(labelIndex, m_gpuTimeDrawCount);
+}
+
+void VulkanRenderer::gpuTime_collect(size_t commandBufferIndex)
+{
+	if (!m_gpuTimeQueryPool)
+		return;
+	auto& marks = m_gpuTimeMarks[commandBufferIndex];
+	if (marks.size() >= 2)
+	{
+		uint64 timestamps[kGpuTimeQueriesPerCommandBuffer];
+		VkResult result = vkGetQueryPoolResults(m_logicalDevice, m_gpuTimeQueryPool, (uint32)commandBufferIndex * kGpuTimeQueriesPerCommandBuffer, (uint32)marks.size(), marks.size() * sizeof(uint64), timestamps, sizeof(uint64), VK_QUERY_RESULT_64_BIT);
+		if (result == VK_SUCCESS)
+		{
+			for (size_t i = 0; i + 1 < marks.size(); i++)
+			{
+				uint32 label = marks[i].first;
+				m_gpuTimeTicks[label] += timestamps[i + 1] - timestamps[i];
+				m_gpuTimeSegments[label]++;
+				m_gpuTimeDraws[label] += marks[i + 1].second - marks[i].second;
+			}
+		}
+	}
+	marks.clear();
+}
+
+void VulkanRenderer::gpuTime_print(uint32 frameCount)
+{
+	std::vector<uint32> order(m_gpuTimeLabels.size());
+	for (uint32 i = 0; i < order.size(); i++)
+		order[i] = i;
+	std::sort(order.begin(), order.end(), [&](uint32 a, uint32 b) { return m_gpuTimeTicks[a] > m_gpuTimeTicks[b]; });
+	uint64 totalTicks = 0;
+	for (uint64 ticks : m_gpuTimeTicks)
+		totalTicks += ticks;
+	const double msPerTick = m_gpuTimeNsPerTick / 1000000.0;
+	cemuLog_log(LogType::Force, "Vulkan GPU time per frame: {:.2f} ms", totalTicks * msPerTick / frameCount);
+	for (size_t i = 0; i < std::min<size_t>(order.size(), 40); i++)
+	{
+		uint32 label = order[i];
+		if (m_gpuTimeTicks[label] == 0)
+			break;
+		cemuLog_log(LogType::Force, "  {:6.3f} ms {:5.1f}x {:6.1f} draws  {}", m_gpuTimeTicks[label] * msPerTick / frameCount, m_gpuTimeSegments[label] / (double)frameCount, m_gpuTimeDraws[label] / (double)frameCount, m_gpuTimeLabels[label]);
+	}
+	std::fill(m_gpuTimeTicks.begin(), m_gpuTimeTicks.end(), 0);
+	std::fill(m_gpuTimeSegments.begin(), m_gpuTimeSegments.end(), 0);
+	std::fill(m_gpuTimeDraws.begin(), m_gpuTimeDraws.end(), 0);
+}
+
+std::string VulkanRenderer::gpuTime_describeFBO(CachedFBOVk* fbo)
+{
+	std::string desc = fmt::format("pass {}x{}", fbo->GetExtend().width, fbo->GetExtend().height);
+	for (int i = 0; i < 8; i++)
+	{
+		LatteTextureView* view = fbo->colorBuffer[i].texture;
+		if (view)
+			desc += fmt::format(" c{}:{:x}@{:08x}", i, (uint32)view->baseTexture->format, view->baseTexture->physAddress);
+	}
+	if (LatteTextureView* view = fbo->depthBuffer.texture)
+		desc += fmt::format(" d:{:x}@{:08x}", (uint32)view->baseTexture->format, view->baseTexture->physAddress);
+	return desc;
+}
+
 void VulkanRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+	static uint32 s_gpuTimeFrames = 0;
+	if (m_gpuTimeQueryPool && ++s_gpuTimeFrames == 600)
+	{
+		gpuTime_print(s_gpuTimeFrames);
+		s_gpuTimeFrames = 0;
+	}
 	static const bool s_statsEnabled = []() { std::error_code ec; return fs::exists(ActiveSettings::GetUserDataPath("vk.stats"), ec); }();
 	static uint32 s_statsFrames = 0;
 	if (s_statsEnabled && ++s_statsFrames == 600)
@@ -3367,6 +3498,7 @@ void VulkanRenderer::ClearColorImageRaw(VkImage image, uint32 sliceIndex, uint32
 {
 	draw_countRenderPassEnd(2); // clearColorRaw
 	draw_endRenderPass();
+	gpuTime_mark("clear color raw");
 
 	VkImageSubresourceRange subresourceRange{};
 	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -3438,6 +3570,7 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 	LatteTextureViewVk* texViewVk = (LatteTextureViewVk*)texView;
 	draw_countRenderPassEnd(3); // backbufferQuad
 	draw_endRenderPass();
+	gpuTime_mark(padView ? "backbuffer quad pad" : "backbuffer quad tv");
 
 	// barrier for input texture
 	VkMemoryBarrier memoryBarrier{};
@@ -3498,6 +3631,7 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 	vkCmdDraw(m_state.currentCommandBuffer, 6, 1, 0, 0);
 
 	vkCmdEndRenderPass(m_state.currentCommandBuffer);
+	gpuTime_mark("outside render passes");
 
 	// the GamePad image is copied while the game may still render, restore the state its draws rely on
 	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
@@ -3712,6 +3846,7 @@ void VulkanRenderer::texture_clearSlice(LatteTexture* hostTexture, sint32 sliceI
 {
 	draw_countRenderPassEnd(4); // clearSlice
 	draw_endRenderPass();
+	gpuTime_mark("clear slice");
 	auto vkTexture = (LatteTextureVk*)hostTexture;
 	if (vkTexture->isDepth)
 		texture_clearDepthSlice(hostTexture, sliceIndex, mipIndex, true, vkTexture->hasStencil, 0.0f, 0);
@@ -3736,6 +3871,7 @@ void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 s
 {
 	draw_countRenderPassEnd(5); // clearDepth
 	draw_endRenderPass(); // vkCmdClearDepthStencilImage must not be inside renderpass
+	gpuTime_mark(fmt::format("clear depth {}x{}", hostTexture->width, hostTexture->height));
 
 	auto vkTexture = (LatteTextureVk*)hostTexture;
 
@@ -3782,6 +3918,7 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 	draw_countRenderPassEnd(6); // loadSlice
 	draw_endRenderPass();
+	gpuTime_mark("texture upload");
 
 	VkMemoryRequirements memRequirements;
 	vkGetImageMemoryRequirements(m_logicalDevice, vkImageObj->m_image, &memRequirements);
@@ -3896,6 +4033,7 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 
 	draw_countRenderPassEnd(7); // copyImage
 	draw_endRenderPass(); // vkCmdCopyImage must be called outside of a renderpass
+	gpuTime_mark(fmt::format("copy image {}x{} {:x}@{:08x} to {:x}@{:08x}", effectiveCopyWidth, effectiveCopyHeight, (uint32)src->format, src->physAddress, (uint32)dst->format, dst->physAddress));
 
 	VKRObjectTexture* srcVkObj = srcVk->GetImageObj();
 	VKRObjectTexture* dstVkObj = dstVk->GetImageObj();
@@ -4116,6 +4254,7 @@ void VulkanRenderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 buffe
 {
 	draw_countRenderPassEnd(8); // bufferUpload
 	draw_endRenderPass();
+	gpuTime_mark("buffer upload");
 
 	VKRSynchronizedRingAllocator& vkMemAllocator = memoryManager->getStagingAllocator();
 
