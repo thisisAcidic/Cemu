@@ -1,5 +1,14 @@
 # Changelog
 
+## Cidemu 0.6
+
+- Recompiler: Functions with `ps_nabs`, `psq_lx` or `psq_lux`, and functions with an `fmsub` whose target is also the subtracted register, ran in the interpreter. In Need for Speed: Most Wanted U these were about 400 functions that took about 30 % of the main core while driving.
+- Vulkan: Textures that a game uses with two formats of the same size share their memory. Before, they were two textures that were copied into each other whenever the other one was used, in Need for Speed: Most Wanted U about 1 ms of GPU time per frame.
+- Vulkan: The command buffer is submitted when the next render pass begins instead of in the middle of one. On tiled GPUs like the Adreno, ending a render pass early stores and reloads all of its attachments.
+- Together with the 60 FPS pack, Need for Speed: Most Wanted U now runs at 59 to 60 FPS while driving through the city on the AYN Thor, also in the busiest part of the tested route, where it dropped to 52 FPS before the two GPU changes. Before the recompiler change it reached 20 to 30 FPS with the pack.
+- Fixed trees, grass and parts of buildings glowing white in Need for Speed: Most Wanted U. The game draws foliage with a pixel shader that exports two of the four G-buffer targets it has enabled. The other two kept their content, which there is the previous frame's image, and the lighting pass added it as emitted light. Color targets that are enabled but not exported are now written with zero. The first start compiles the affected shaders again.
+- Graphic packs: Shader replacements whose hash starts with 8 to f are loaded on Android. Android's `swscanf` limits hexadecimal numbers to the largest signed 64-bit value, so these files got a wrong hash and were never used.
+
 ## Cidemu 0.5
 
 - Fixed Need for Speed: Most Wanted U and LEGO City Undercover stopping after a few minutes of play with "Failed to allocate descriptor sets". While driving through the city, Need for Speed uses more descriptors within a few seconds than the single descriptor pool held, and the Adreno driver doesn't go beyond it. Cidemu now adds pools when they are full and releases descriptor sets that weren't used for about ten seconds. The Cemu Android port has the same limit.
