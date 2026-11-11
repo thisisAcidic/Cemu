@@ -498,6 +498,7 @@ struct CemuConfig
 
 	ConfigValue<sint32> upscale_filter{kBicubicFilter};
 	ConfigValue<sint32> downscale_filter{kLinearFilter};
+	ConfigValue<bool> fxaa{false}; // smooths edges of the TV image when it is put on the screen
 	ConfigValue<sint32> fullscreen_scaling{kKeepAspectRatio};
 
 	// audio

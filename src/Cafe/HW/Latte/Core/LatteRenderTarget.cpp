@@ -967,6 +967,12 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 		}
 	}
 
+	if (shader == nullptr && GetConfig().fxaa && !isPadView)
+	{
+		shader = renderUpsideDown ? RendererOutputShader::s_fxaa_shader_ud : RendererOutputShader::s_fxaa_shader;
+		filter = LatteTextureView::MagFilter::kLinear;
+	}
+
 	if (shader == nullptr)
 	{
 		sint32 scaling_filter = downscaling ? GetConfig().downscale_filter : GetConfig().upscale_filter;

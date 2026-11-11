@@ -121,6 +121,138 @@ fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[t
 }
 )";
 
+const std::string RendererOutputShader::s_fxaa_shader_source =
+R"(
+// FXAA: finds edges from the luma contrast to the four neighbours, follows each edge to both of its ends and blends
+// across it depending on where along the edge the pixel is. Pixels without a noticeable contrast are passed through,
+// so texture detail stays sharp.
+const float edgeThreshold = 0.166;
+const float edgeThresholdMin = 0.0833;
+const float subpixelAmount = 0.5;
+const int searchSteps = 12;
+
+float fxaaLuma(vec2 uv)
+{
+	return dot(texture(textureSrc, uv).rgb, vec3(0.299, 0.587, 0.114));
+}
+
+float fxaaSearchStep(int i)
+{
+	if (i < 5)
+		return 1.0;
+	if (i == 5)
+		return 1.5;
+	if (i < 10)
+		return 2.0;
+	if (i == 10)
+		return 4.0;
+	return 8.0;
+}
+
+void outputShader()
+{
+	vec2 texel = 1.0 / textureSrcResolution;
+	vec3 rgbM = texture(textureSrc, passUV).rgb;
+	float lumaM = dot(rgbM, vec3(0.299, 0.587, 0.114));
+	float lumaN = fxaaLuma(passUV + vec2(0.0, -texel.y));
+	float lumaS = fxaaLuma(passUV + vec2(0.0, texel.y));
+	float lumaW = fxaaLuma(passUV + vec2(-texel.x, 0.0));
+	float lumaE = fxaaLuma(passUV + vec2(texel.x, 0.0));
+	float lumaMax = max(max(max(lumaN, lumaS), max(lumaW, lumaE)), lumaM);
+	float lumaMin = min(min(min(lumaN, lumaS), min(lumaW, lumaE)), lumaM);
+	float range = lumaMax - lumaMin;
+	if (range < max(edgeThresholdMin, lumaMax * edgeThreshold))
+	{
+		colorOut0 = vec4(rgbM, 1.0);
+		return;
+	}
+
+	float lumaNW = fxaaLuma(passUV - texel);
+	float lumaSE = fxaaLuma(passUV + texel);
+	float lumaNE = fxaaLuma(passUV + vec2(texel.x, -texel.y));
+	float lumaSW = fxaaLuma(passUV + vec2(-texel.x, texel.y));
+
+	// is the edge horizontal or vertical
+	float edgeHorizontal = abs(lumaNW + lumaSW - 2.0 * lumaW) + 2.0 * abs(lumaN + lumaS - 2.0 * lumaM) + abs(lumaNE + lumaSE - 2.0 * lumaE);
+	float edgeVertical = abs(lumaNW + lumaNE - 2.0 * lumaN) + 2.0 * abs(lumaW + lumaE - 2.0 * lumaM) + abs(lumaSW + lumaSE - 2.0 * lumaS);
+	bool isHorizontal = edgeHorizontal >= edgeVertical;
+
+	// which side of the pixel the edge is on
+	float luma1 = isHorizontal ? lumaN : lumaW;
+	float luma2 = isHorizontal ? lumaS : lumaE;
+	float gradient1 = luma1 - lumaM;
+	float gradient2 = luma2 - lumaM;
+	bool side1 = abs(gradient1) >= abs(gradient2);
+	float gradientScaled = 0.25 * max(abs(gradient1), abs(gradient2));
+	float stepLength = isHorizontal ? texel.y : texel.x;
+	float lumaLocalAverage;
+	if (side1)
+	{
+		stepLength = -stepLength;
+		lumaLocalAverage = 0.5 * (luma1 + lumaM);
+	}
+	else
+	{
+		lumaLocalAverage = 0.5 * (luma2 + lumaM);
+	}
+
+	// walk along the edge in both directions until the luma changes
+	vec2 edgeUV = passUV;
+	if (isHorizontal)
+		edgeUV.y += stepLength * 0.5;
+	else
+		edgeUV.x += stepLength * 0.5;
+	vec2 offset = isHorizontal ? vec2(texel.x, 0.0) : vec2(0.0, texel.y);
+	vec2 uv1 = edgeUV - offset;
+	vec2 uv2 = edgeUV + offset;
+	float lumaEnd1 = 0.0;
+	float lumaEnd2 = 0.0;
+	bool reached1 = false;
+	bool reached2 = false;
+	for (int i = 0; i < searchSteps; i++)
+	{
+		if (!reached1)
+		{
+			lumaEnd1 = fxaaLuma(uv1) - lumaLocalAverage;
+			reached1 = abs(lumaEnd1) >= gradientScaled;
+		}
+		if (!reached2)
+		{
+			lumaEnd2 = fxaaLuma(uv2) - lumaLocalAverage;
+			reached2 = abs(lumaEnd2) >= gradientScaled;
+		}
+		if (reached1 && reached2)
+			break;
+		if (!reached1)
+			uv1 -= offset * fxaaSearchStep(i);
+		if (!reached2)
+			uv2 += offset * fxaaSearchStep(i);
+	}
+
+	// blend more the closer the pixel is to the end of the edge where the luma goes the right way
+	float distance1 = isHorizontal ? (passUV.x - uv1.x) : (passUV.y - uv1.y);
+	float distance2 = isHorizontal ? (uv2.x - passUV.x) : (uv2.y - passUV.y);
+	bool closerTo1 = distance1 < distance2;
+	float pixelOffset = 0.5 - min(distance1, distance2) / (distance1 + distance2);
+	bool centerIsSmaller = lumaM < lumaLocalAverage;
+	bool goodVariation = ((closerTo1 ? lumaEnd1 : lumaEnd2) < 0.0) != centerIsSmaller;
+	float finalOffset = goodVariation ? pixelOffset : 0.0;
+
+	// thin features that the edge walk misses
+	float lumaAverage = (2.0 * (lumaN + lumaS + lumaW + lumaE) + lumaNW + lumaNE + lumaSW + lumaSE) / 12.0;
+	float subpixel = clamp(abs(lumaAverage - lumaM) / range, 0.0, 1.0);
+	subpixel = (-2.0 * subpixel + 3.0) * subpixel * subpixel;
+	finalOffset = max(finalOffset, subpixel * subpixel * subpixelAmount);
+
+	vec2 finalUV = passUV;
+	if (isHorizontal)
+		finalUV.y += finalOffset * stepLength;
+	else
+		finalUV.x += finalOffset * stepLength;
+	colorOut0 = vec4(texture(textureSrc, finalUV).rgb, 1.0);
+}
+)";
+
 const std::string RendererOutputShader::s_hermite_shader_source =
 R"(
 // https://www.shadertoy.com/view/MllSzX
@@ -299,6 +431,9 @@ RendererOutputShader* RendererOutputShader::s_bicubic_shader_ud;
 
 RendererOutputShader* RendererOutputShader::s_hermit_shader;
 RendererOutputShader* RendererOutputShader::s_hermit_shader_ud;
+
+RendererOutputShader* RendererOutputShader::s_fxaa_shader;
+RendererOutputShader* RendererOutputShader::s_fxaa_shader_ud;
 
 std::string RendererOutputShader::GetOpenGlVertexSource(bool render_upside_down)
 {
@@ -508,6 +643,9 @@ void RendererOutputShader::InitializeStatic()
 
        	s_hermit_shader = new RendererOutputShader(vertex_source, s_hermite_shader_source_mtl);
        	s_hermit_shader_ud = new RendererOutputShader(vertex_source_ud, s_hermite_shader_source_mtl);
+       	// no Metal version of the FXAA shader yet
+       	s_fxaa_shader = s_copy_shader;
+       	s_fxaa_shader_ud = s_copy_shader_ud;
 		break;
     }
 #endif
@@ -527,6 +665,9 @@ void RendererOutputShader::InitializeStatic()
 
     	s_hermit_shader = new RendererOutputShader(vertex_source, s_hermite_shader_source);
     	s_hermit_shader_ud = new RendererOutputShader(vertex_source_ud, s_hermite_shader_source);
+
+    	s_fxaa_shader = new RendererOutputShader(vertex_source, s_fxaa_shader_source);
+    	s_fxaa_shader_ud = new RendererOutputShader(vertex_source_ud, s_fxaa_shader_source);
 		break;
     }
 #endif
@@ -546,6 +687,9 @@ void RendererOutputShader::InitializeStatic()
 
     	s_hermit_shader = new RendererOutputShader(vertex_source, s_hermite_shader_source);
     	s_hermit_shader_ud = new RendererOutputShader(vertex_source_ud, s_hermite_shader_source);
+
+    	s_fxaa_shader = new RendererOutputShader(vertex_source, s_fxaa_shader_source);
+    	s_fxaa_shader_ud = new RendererOutputShader(vertex_source_ud, s_fxaa_shader_source);
 		break;
     }
 #endif
@@ -554,6 +698,15 @@ void RendererOutputShader::InitializeStatic()
 
 void RendererOutputShader::ShutdownStatic()
 {
+	// on Metal these are the copy shaders
+	if (s_fxaa_shader != s_copy_shader)
+	{
+		delete s_fxaa_shader;
+		delete s_fxaa_shader_ud;
+	}
+	s_fxaa_shader = nullptr;
+	s_fxaa_shader_ud = nullptr;
+
 	delete s_copy_shader;
 	delete s_copy_shader_ud;
 

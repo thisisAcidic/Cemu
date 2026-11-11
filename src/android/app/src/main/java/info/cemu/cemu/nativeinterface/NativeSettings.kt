@@ -62,6 +62,12 @@ object NativeSettings {
     external fun setDownscalingFilter(value: Int)
 
     @JvmStatic
+    external fun isFxaaEnabled(): Boolean
+
+    @JvmStatic
+    external fun setFxaaEnabled(enabled: Boolean)
+
+    @JvmStatic
     external fun isBootSoundEnabled(): Boolean
 
     @JvmStatic

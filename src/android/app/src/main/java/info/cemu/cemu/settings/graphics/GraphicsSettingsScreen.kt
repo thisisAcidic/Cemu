@@ -78,6 +78,12 @@ fun GraphicsSettingsScreen(navigateBack: () -> Unit, goToCustomDriversSettings: 
             choiceToString = { scalingFilterToString(it) },
             choices = ScalingFilterChoices,
         )
+        Toggle(
+            label = tr("Anti-aliasing (FXAA)"),
+            description = tr("Smooths jagged edges of the TV image. Costs little GPU time, but makes the image slightly softer"),
+            initialCheckedState = NativeSettings::isFxaaEnabled,
+            onCheckedChanged = NativeSettings::setFxaaEnabled,
+        )
     }
 }
 
