@@ -1,5 +1,9 @@
 # Changelog
 
+## Cidemu 0.5
+
+- Fixed Need for Speed: Most Wanted U and LEGO City Undercover stopping after a few minutes of play with "Failed to allocate descriptor sets". While driving through the city, Need for Speed uses more descriptors within a few seconds than the single descriptor pool held, and the Adreno driver doesn't go beyond it. Cidemu now adds pools when they are full and releases descriptor sets that weren't used for about ten seconds. The Cemu Android port has the same limit.
+
 ## Cidemu 0.4
 
 - Fixed Need for Speed: Most Wanted U crashing right after the start in about half of the launches. The emulated Wii U memory was only aligned to the 4 KB pages of Android, so memory that a game requested with a larger alignment could come back misaligned, depending on where Android placed the emulated memory. The game then built its memory pools with a null pointer. The emulated memory is now aligned to 4 GB. The Cemu Android port has the same problem.
