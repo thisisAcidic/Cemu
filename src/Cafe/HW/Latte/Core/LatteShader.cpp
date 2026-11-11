@@ -650,6 +650,13 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 		auxHash = (auxHash >> 3) | (auxHash << 61);
 		auxHash += 1;
 	}
+	// alpha to mask
+	uint32 alphaToMask = contextRegisters[Latte::REGADDR::DB_ALPHA_TO_MASK] & 0x1FF01;
+	if (alphaToMask & 1)
+	{
+		auxHash = (auxHash >> 3) | (auxHash << 61);
+		auxHash += (uint64)alphaToMask;
+	}
 	// texture types (2D, 3D, cubemap etc.) affect the shader too
 	for (uint8 i = 0; i < pixelShader->textureUnitListCount; i++)
 	{

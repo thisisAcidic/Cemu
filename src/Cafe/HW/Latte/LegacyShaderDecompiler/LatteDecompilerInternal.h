@@ -276,3 +276,13 @@ void LatteDecompiler_cleanup(LatteDecompilerShaderContext* shaderContext);
 // helper functions
 
 sint32 LatteDecompiler_getColorOutputIndexFromExportIndex(LatteDecompilerShaderContext* shaderContext, sint32 exportIndex);
+
+// Alpha to mask turns the alpha of color output 0 into the sample coverage. With one sample per pixel a pixel is kept
+// when its alpha reaches a threshold set by the offset of its position in the 2x2 quad (upper left, upper right, lower left, lower right)
+inline void LatteDecompiler_getAlphaToMaskThresholds(const Latte::LATTE_DB_ALPHA_TO_MASK& reg, float thresholds[4])
+{
+	const uint32 offsets[4] = { reg.get_ALPHA_TO_MASK_OFFSET0(), reg.get_ALPHA_TO_MASK_OFFSET1(), reg.get_ALPHA_TO_MASK_OFFSET2(), reg.get_ALPHA_TO_MASK_OFFSET3() };
+	const float rounding = reg.get_OFFSET_ROUND() ? 0.5f : 0.0f;
+	for (sint32 i = 0; i < 4; i++)
+		thresholds[i] = (4.0f - (float)offsets[i] - rounding) * 0.25f;
+}

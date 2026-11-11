@@ -40,6 +40,47 @@ namespace GX2
 		GX2SetAlphaTestReg(&tmpReg);
 	}
 
+	void GX2InitAlphaToMaskReg(GX2AlphaToMaskReg* reg, uint32 alphaToMaskEnable, GX2_ALPHA_TO_MASK_MODE mode)
+	{
+		// per pixel coverage offsets for the four pixels of a 2x2 quad (upper left, upper right, lower left, lower right)
+		// the dithered modes rotate the same pattern
+		static constexpr uint8 s_quadOffsets[5][4] =
+		{
+			{2, 2, 2, 2},
+			{3, 1, 0, 2},
+			{0, 3, 2, 1},
+			{2, 0, 1, 3},
+			{1, 2, 3, 0},
+		};
+		uint32 modeIndex = (uint32)mode;
+		if (modeIndex >= 5)
+			modeIndex = 0;
+		Latte::LATTE_DB_ALPHA_TO_MASK tmpReg;
+		tmpReg.set_ALPHA_TO_MASK_ENABLE(alphaToMaskEnable != 0);
+		tmpReg.set_ALPHA_TO_MASK_OFFSET0(s_quadOffsets[modeIndex][0]);
+		tmpReg.set_ALPHA_TO_MASK_OFFSET1(s_quadOffsets[modeIndex][1]);
+		tmpReg.set_ALPHA_TO_MASK_OFFSET2(s_quadOffsets[modeIndex][2]);
+		tmpReg.set_ALPHA_TO_MASK_OFFSET3(s_quadOffsets[modeIndex][3]);
+		tmpReg.set_OFFSET_ROUND(modeIndex != 0);
+		reg->reg = tmpReg;
+	}
+
+	void GX2SetAlphaToMaskReg(GX2AlphaToMaskReg* reg)
+	{
+		GX2ReserveCmdSpace(3);
+		gx2WriteGather_submit(
+			pm4HeaderType3(IT_SET_CONTEXT_REG, 1 + 1),
+			Latte::REGADDR::DB_ALPHA_TO_MASK - 0xA000,
+			reg->reg);
+	}
+
+	void GX2SetAlphaToMask(uint32 alphaToMaskEnable, GX2_ALPHA_TO_MASK_MODE mode)
+	{
+		GX2AlphaToMaskReg tmpReg;
+		GX2InitAlphaToMaskReg(&tmpReg, alphaToMaskEnable, mode);
+		GX2SetAlphaToMaskReg(&tmpReg);
+	}
+
 	void GX2InitColorControlReg(GX2ColorControlReg* reg, GX2_LOGICOP logicOp, uint32 blendMask, uint32 multiwriteEnable, uint32 colorBufferEnable)
 	{
 		Latte::LATTE_CB_COLOR_CONTROL colorControlReg2;
@@ -660,6 +701,10 @@ namespace GX2
 		cafeExportRegister("gx2", GX2InitAlphaTestReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetAlphaTestReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetAlphaTest, LogType::GX2);
+
+		cafeExportRegister("gx2", GX2InitAlphaToMaskReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2SetAlphaToMaskReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2SetAlphaToMask, LogType::GX2);
 
 		cafeExportRegister("gx2", GX2InitColorControlReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetColorControl, LogType::GX2);

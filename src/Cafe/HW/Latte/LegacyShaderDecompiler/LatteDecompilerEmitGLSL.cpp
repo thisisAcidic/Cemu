@@ -3237,6 +3237,17 @@ void _emitExportCode(LatteDecompilerShaderContext* shaderContext, LatteDecompile
 			for(uint32 i=0; i<(cfInstruction->exportBurstCount+1); i++)
 			{
 				sint32 pixelColorOutputIndex = LatteDecompiler_getColorOutputIndexFromExportIndex(shaderContext, cfInstruction->exportArrayBase+i);
+				if (pixelColorOutputIndex == 0 && shaderContext->contextRegistersNew->DB_ALPHA_TO_MASK.get_ALPHA_TO_MASK_ENABLE())
+				{
+					float thresholds[4];
+					LatteDecompiler_getAlphaToMaskThresholds(shaderContext->contextRegistersNew->DB_ALPHA_TO_MASK, thresholds);
+					src->add("if( (");
+					_emitExportGPRReadCode(shaderContext, cfInstruction, LATTE_DECOMPILER_DTYPE_FLOAT, i);
+					if (thresholds[0] == thresholds[1] && thresholds[0] == thresholds[2] && thresholds[0] == thresholds[3])
+						src->addFmt(").a < {:.4f} ) discard;" _CRLF, thresholds[0]);
+					else
+						src->addFmt(").a < vec4({:.4f},{:.4f},{:.4f},{:.4f})[(int(gl_FragCoord.y)&1)*2+(int(gl_FragCoord.x)&1)] ) discard;" _CRLF, thresholds[0], thresholds[1], thresholds[2], thresholds[3]);
+				}
 				// if color output is for target 0, then also handle alpha test
 				bool alphaTestEnable = shaderContext->contextRegistersNew->SX_ALPHA_TEST_CONTROL.get_ALPHA_TEST_ENABLE();
 				auto alphaTestFunc = shaderContext->contextRegistersNew->SX_ALPHA_TEST_CONTROL.get_ALPHA_FUNC();
