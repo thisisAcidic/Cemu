@@ -1039,7 +1039,9 @@ bool PipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool show
 	}
 	else
 	{
-		cemuLog_log(LogType::Force, "Failed to create graphics pipeline. Error {}", (sint32)result);
+		cemuLog_log(LogType::Force, "Failed to create graphics pipeline. Error {} (vertex shader {:016x}_{:016x}, pixel shader {:016x}_{:016x})", (sint32)result,
+			m_vkVertexShader ? m_vkVertexShader->GetBaseHash() : 0, m_vkVertexShader ? m_vkVertexShader->GetAuxHash() : 0,
+			m_vkPixelShader ? m_vkPixelShader->GetBaseHash() : 0, m_vkPixelShader ? m_vkPixelShader->GetAuxHash() : 0);
 		cemu_assert_debug(false);
 		return true; // true indicates that caller should no longer attempt to compile this pipeline again
 	}
