@@ -811,30 +811,15 @@ void PPCRecompilerImlGen_EmitPSQLoadCase(ppcImlGenContext_t* ppcImlGenContext, s
 	}
 }
 
-// PSQ_L and PSQ_LU
-bool PPCRecompilerImlGen_PSQ_L(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode, bool withUpdate)
+// loads frD from gprA + imm with the quantization of GQR gqrIndex
+static bool PPCRecompilerImlGen_EmitPSQLoad(ppcImlGenContext_t* ppcImlGenContext, sint32 frD, sint32 gqrIndex, bool readPS1, IMLReg gprA, sint32 imm)
 {
-	int rA, frD;
-	uint32 immUnused;
-	PPC_OPC_TEMPL_D_SImm(opcode, frD, rA, immUnused);
-	sint32 gqrIndex = ((opcode >> 12) & 7);
-	uint32 imm = opcode & 0xFFF;
-	if (imm & 0x800)
-		imm |= ~0xFFF;
-	bool readPS1 = (opcode & 0x8000) == false;
-
-	IMLReg gprA = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_R0+rA);
 	DefinePS0(fprDPS0, frD);
 	DefinePS1(fprDPS1, frD);
 	if (!readPS1)
 	{
 		// if PS1 is not explicitly read then set it to 1.0
 		ppcImlGenContext->emitInst().make_fpr_r(IMLOperation::OP_FPR_LOAD_ONE, fprDPS1);
-	}
-	if (withUpdate)
-	{
-		ppcImlGenContext->emitInst().make_r_r_s32(IMLOperation::OP_ADD, gprA, gprA, (sint32)imm);
-		imm = 0;
 	}
 	uint32 knownGQRValue = 0;
 	if ( !PPCRecompiler_isUGQRValueKnown(ppcImlGenContext, gqrIndex, knownGQRValue) )
@@ -873,6 +858,57 @@ bool PPCRecompilerImlGen_PSQ_L(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 
 	PPCRecompilerImlGen_EmitPSQLoadCase(ppcImlGenContext, gqrIndex, type, readPS1, gprA, imm, fprDPS0, fprDPS1);
 	return true;
+}
+
+// PSQ_L and PSQ_LU
+bool PPCRecompilerImlGen_PSQ_L(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode, bool withUpdate)
+{
+	int rA, frD;
+	uint32 immUnused;
+	PPC_OPC_TEMPL_D_SImm(opcode, frD, rA, immUnused);
+	sint32 gqrIndex = ((opcode >> 12) & 7);
+	uint32 imm = opcode & 0xFFF;
+	if (imm & 0x800)
+		imm |= ~0xFFF;
+	bool readPS1 = (opcode & 0x8000) == false;
+
+	IMLReg gprA = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_R0+rA);
+	if (withUpdate)
+	{
+		ppcImlGenContext->emitInst().make_r_r_s32(IMLOperation::OP_ADD, gprA, gprA, (sint32)imm);
+		imm = 0;
+	}
+	return PPCRecompilerImlGen_EmitPSQLoad(ppcImlGenContext, frD, gqrIndex, readPS1, gprA, (sint32)imm);
+}
+
+// PSQ_LX and PSQ_LUX
+bool PPCRecompilerImlGen_PSQ_LX(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode, bool withUpdate)
+{
+	sint32 frD = (opcode >> 21) & 0x1F;
+	sint32 rA = (opcode >> 16) & 0x1F;
+	sint32 rB = (opcode >> 11) & 0x1F;
+	sint32 gqrIndex = (opcode >> 7) & 7;
+	bool readPS1 = (opcode & 0x400) == 0;
+
+	IMLReg gprB = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_R0+rB);
+	IMLReg gprEA;
+	if (withUpdate)
+	{
+		gprEA = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_R0+rA);
+		ppcImlGenContext->emitInst().make_r_r_r(IMLOperation::OP_ADD, gprEA, gprEA, gprB);
+	}
+	else if (rA == 0)
+	{
+		gprEA = gprB;
+	}
+	else
+	{
+		// temporaries 0 to 2 are used by the load itself
+		IMLReg gprA = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_R0+rA);
+		gprEA = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_TEMPORARY + 3);
+		ppcImlGenContext->emitInst().make_r_r_r(IMLOperation::OP_ADD, gprEA, gprA, gprB);
+	}
+	return PPCRecompilerImlGen_EmitPSQLoad(ppcImlGenContext, frD, gqrIndex, readPS1, gprEA, 0);
 }
 
 void PPCRecompilerImlGen_EmitPSQStoreCase(ppcImlGenContext_t* ppcImlGenContext, sint32 gqrIndex, Espresso::PSQ_LOAD_TYPE storeType, bool storePS1, IMLReg gprA, sint32 imm, IMLReg fprDPS0, IMLReg fprDPS1)

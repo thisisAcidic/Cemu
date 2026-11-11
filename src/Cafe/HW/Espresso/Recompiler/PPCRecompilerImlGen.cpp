@@ -1951,6 +1951,11 @@ bool PPCRecompiler_decodePPCInstruction(ppcImlGenContext_t* ppcImlGenContext)
 				break;
 			}
 			break;
+		case 6: // PSQ_LX and PSQ_LUX
+			if (PPCRecompilerImlGen_PSQ_LX(ppcImlGenContext, opcode, ((opcode >> 6) & 1) != 0) == false)
+				unsupportedInstructionFound = true;
+			ppcImlGenContext->hasFPUInstruction = true;
+			break;
 		case 8: //Sub category - move/negate
 			switch (PPC_getBits(opcode, 25, 5))
 			{
