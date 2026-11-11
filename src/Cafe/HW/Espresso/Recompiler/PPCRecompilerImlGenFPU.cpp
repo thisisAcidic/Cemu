@@ -1524,6 +1524,27 @@ bool PPCRecompilerImlGen_PS_ABS(ppcImlGenContext_t* ppcImlGenContext, uint32 opc
 	return true;
 }
 
+bool PPCRecompilerImlGen_PS_NABS(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode)
+{
+	sint32 frD, frB;
+	frB = (opcode>>11)&0x1F;
+	frD = (opcode>>21)&0x1F;
+
+	DefinePS0(fprBps0, frB);
+	DefinePS1(fprBps1, frB);
+	DefinePS0(fprDps0, frD);
+	DefinePS1(fprDps1, frD);
+
+	if (frB != frD)
+	{
+		ppcImlGenContext->emitInst().make_fpr_r_r(IMLOperation::OP_FPR_ASSIGN, fprDps0, fprBps0);
+		ppcImlGenContext->emitInst().make_fpr_r_r(IMLOperation::OP_FPR_ASSIGN, fprDps1, fprBps1);
+	}
+	ppcImlGenContext->emitInst().make_fpr_r(IMLOperation::OP_FPR_NEGATIVE_ABS, fprDps0);
+	ppcImlGenContext->emitInst().make_fpr_r(IMLOperation::OP_FPR_NEGATIVE_ABS, fprDps1);
+	return true;
+}
+
 bool PPCRecompilerImlGen_PS_RES(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode)
 {
 	sint32 frD, frB;
