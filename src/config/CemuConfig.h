@@ -427,7 +427,7 @@ struct CemuConfig
 #endif
 	ConfigValue<bool> disable_screensaver{DISABLE_SCREENSAVER_DEFAULT};
 #undef DISABLE_SCREENSAVER_DEFAULT
-	ConfigValue<bool> play_boot_sound{false};
+	ConfigValue<bool> play_boot_sound{true};
 
 #if BOOST_PLAT_ANDROID
 	ConfigValue<std::string> custom_driver_path{};
@@ -490,7 +490,7 @@ struct CemuConfig
 		ScreenPosition position = ScreenPosition::kTopLeft;
 		uint32 text_color = 0xFFFFFFFF;
 		sint32 text_scale = 100;
-		bool controller_profiles = true;
+		bool controller_profiles = false;
 		bool controller_battery = false;
 		bool shader_compiling = true;
 		bool friends = true;

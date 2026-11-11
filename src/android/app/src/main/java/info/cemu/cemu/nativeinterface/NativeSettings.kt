@@ -62,6 +62,12 @@ object NativeSettings {
     external fun setDownscalingFilter(value: Int)
 
     @JvmStatic
+    external fun isBootSoundEnabled(): Boolean
+
+    @JvmStatic
+    external fun setBootSoundEnabled(enabled: Boolean)
+
+    @JvmStatic
     external fun getAccurateBarriers(): Boolean
 
     @JvmStatic

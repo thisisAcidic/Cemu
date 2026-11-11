@@ -238,6 +238,18 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_getUpscalingFilter([[maybe_un
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeSettings_setBootSoundEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
+{
+	GetConfig().play_boot_sound = enabled;
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeSettings_isBootSoundEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	return GetConfig().play_boot_sound;
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setDownscalingFilter([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint downscaling_filter)
 {
 	GetConfig().downscale_filter = downscaling_filter;

@@ -121,6 +121,15 @@ AudioAPIPtr IAudioAPI::CreateDeviceFromConfig(AudioType type, sint32 rate, sint3
 	if (selectedDevice.empty())
 		return {};
 
+#if BOOST_PLAT_ANDROID && HAS_CUBEB
+	// like the game audio, Android always plays through Cubeb on the system's default output. The settings only store
+	// a placeholder device name and leave the API at its default
+	audioAPIDev = CreateDevice(Cubeb, std::make_shared<CubebAPI::CubebDeviceDescription>(nullptr, std::string(), std::wstring()), rate, channels, samples_per_block, bits_per_sample);
+	if (audioAPIDev)
+		audioAPIDev->SetVolume(GetVolumeFromType(type));
+	return audioAPIDev;
+#endif
+
 	IAudioAPI::DeviceDescriptionPtr device_description;
 	if (IAudioAPI::IsAudioAPIAvailable(audio_api))
 	{

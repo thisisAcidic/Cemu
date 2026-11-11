@@ -162,7 +162,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		overlay.vram_usage = overlay_node.get("VRAMUsage", false);
 		overlay.debug = overlay_node.get("Debug", false);
 
-		notification.controller_profiles = overlay_node.get("ControllerProfiles", true);
+		notification.controller_profiles = overlay_node.get("ControllerProfiles", false);
 		notification.controller_battery = overlay_node.get("ControllerBattery", true);
 		notification.shader_compiling = overlay_node.get("ShaderCompiling", true);
 	}
@@ -177,7 +177,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		overlay.cpu_per_core_usage = graphic.get("OverlayCPUPerCoreUsage", false);
 		overlay.ram_usage = graphic.get("OverlayRAMUsage", false);
 
-		notification.controller_profiles = graphic.get("OverlayControllerProfiles", true);
+		notification.controller_profiles = graphic.get("OverlayControllerProfiles", false);
 		notification.controller_battery = graphic.get("OverlayControllerBattery", true);
 		notification.shader_compiling = graphic.get("ShaderCompiling", true);
 	}
@@ -188,10 +188,18 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		notification.position = notification_node.get("Position", ScreenPosition::kTopLeft);
 		notification.text_color = notification_node.get("TextColor", 0xFFFFFFFF);
 		notification.text_scale = notification_node.get("TextScale", 100);
-		notification.controller_profiles = notification_node.get("ControllerProfiles", true);
+		notification.controller_profiles = notification_node.get("ControllerProfiles", false);
 		notification.controller_battery = notification_node.get("ControllerBattery", false);
 		notification.shader_compiling = notification_node.get("ShaderCompiling", true);
 		notification.friends = notification_node.get("FriendService", true);
+	}
+
+	// Games start like on the console, with their boot sound and without the account and controller notice. Settings
+	// saved before that contain the previous defaults, which are replaced once.
+	if (!parser.get("console_start_defaults", false))
+	{
+		play_boot_sound = true;
+		notification.controller_profiles = false;
 	}
 
 	// audio
@@ -309,6 +317,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	config.set("proxy_server", proxy_server.GetValue().c_str());
 	config.set<bool>("disable_screensaver", disable_screensaver);
 	config.set<bool>("play_boot_sound", play_boot_sound);
+	config.set<bool>("console_start_defaults", true);
 
 	// config.set("cpu_mode", cpu_mode.GetValue());
 	//config.set("console_region", console_region.GetValue());

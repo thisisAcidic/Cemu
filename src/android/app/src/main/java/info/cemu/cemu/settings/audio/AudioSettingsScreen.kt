@@ -27,6 +27,12 @@ fun AudioSettingsScreen(navigateBack: () -> Unit) {
             labelFormatter = { "${it}ms" }
         )
         Toggle(
+            label = tr("Boot sound"),
+            description = tr("Play the boot sound of a game while it starts, like the console"),
+            initialCheckedState = NativeSettings::isBootSoundEnabled,
+            onCheckedChanged = NativeSettings::setBootSoundEnabled,
+        )
+        Toggle(
             label = tr("TV"),
             description = tr("Enable audio output for the Wii U TV"),
             initialCheckedState = { NativeSettings.getAudioDeviceEnabled(true) },
