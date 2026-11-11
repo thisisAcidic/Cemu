@@ -4091,6 +4091,17 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 	{
 	    src->addFmt("{} out;" _CRLF, outputTypeName);
 	}
+	if (shader->shaderType == LatteConst::ShaderType::Pixel)
+	{
+		for (uint32 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
+		{
+			if ((shader->pixelColorZeroMask & (1 << i)) == 0)
+				continue;
+			auto dataType = GetColorBufferDataType(i, *shaderContext->contextRegistersNew);
+			if (dataType != MetalDataType::NONE)
+				src->addFmt("out.passPixelColor{} = {}(0);" _CRLF, i, GetDataTypeStr(dataType));
+		}
+	}
 
 	// variable definition
 	if (shaderContext->typeTracker.useArrayGPRs == false)

@@ -338,7 +338,7 @@ uint8 LatteMRT::GetActiveColorBufferMask(const LatteDecompilerShader* pixelShade
 		return 0;
 	cemu_assert_debug(colorControlReg.get_DEGAMMA_ENABLE() == false); // not supported
 	// start with color buffer mask from pixel shader output
-	uint8 colorBufferMask = pixelShader->pixelColorOutputMask;
+	uint8 colorBufferMask = pixelShader->pixelColorOutputMask | pixelShader->pixelColorZeroMask;
 	// combine color buffer mask with color channel mask from mmCB_TARGET_MASK (disable render buffer if all colors are blocked)
 	uint32 channelTargetMask = lcr.CB_TARGET_MASK.get_MASK();
 	for (uint32 i = 0; i < 8; i++)

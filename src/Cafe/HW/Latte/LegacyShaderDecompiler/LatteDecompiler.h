@@ -172,6 +172,7 @@ struct LatteDecompilerShader
 
 	// analyzer stage (pixel outputs)
 	uint32 pixelColorOutputMask{ 0 }; // from LSB to MSB, 1 bit per written output. 1 if written (indices of color attachments)
+	uint32 pixelColorZeroMask{ 0 }; // color attachments that CB_TARGET_MASK enables but the shader doesn't export, they are written with zero
 	// analyzer stage (depth output)
 	bool depthMask{ false };
 	// analyzer stage (geometry shader parameters/inputs)

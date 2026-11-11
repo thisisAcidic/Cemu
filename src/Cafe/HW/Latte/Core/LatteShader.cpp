@@ -636,6 +636,24 @@ uint64 LatteSHRC_CalcGSAuxHash(LatteDecompilerShader* geometryShader)
 	return 0;
 }
 
+// Color targets that CB_TARGET_MASK enables but CB_SHADER_MASK leaves out are written with zero. Need for Speed: Most
+// Wanted U draws its foliage with two of its four G-buffer targets exported and relies on the other two not keeping
+// their content, which is the previous frame's image there
+uint32 LatteShader_GetPixelColorZeroMask(const uint32* contextRegisters)
+{
+	uint32 targetMask = contextRegisters[Latte::REGADDR::CB_TARGET_MASK];
+	uint32 shaderMask = contextRegisters[mmCB_SHADER_MASK];
+	if (shaderMask == 0)
+		return 0;
+	uint32 zeroMask = 0;
+	for (uint32 i = 0; i < 8; i++)
+	{
+		if (((targetMask >> (i * 4)) & 0xF) != 0 && ((shaderMask >> (i * 4)) & 0xF) == 0)
+			zeroMask |= (1 << i);
+	}
+	return zeroMask;
+}
+
 uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* contextRegisters)
 {
 	uint64 auxHash = 0;
@@ -657,6 +675,12 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 	{
 		auxHash = (auxHash >> 3) | (auxHash << 61);
 		auxHash += (uint64)alphaToMask;
+	}
+	// targets written with zero
+	if (uint32 zeroMask = LatteShader_GetPixelColorZeroMask(contextRegisters); zeroMask != 0)
+	{
+		auxHash = (auxHash >> 3) | (auxHash << 61);
+		auxHash += (uint64)zeroMask << 32;
 	}
 	// texture types (2D, 3D, cubemap etc.) affect the shader too
 	for (uint8 i = 0; i < pixelShader->textureUnitListCount; i++)

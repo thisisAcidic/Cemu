@@ -1226,7 +1226,7 @@ void VulkanRenderer::draw_keepRenderPassForSubset()
 	if (running->GetExtend().width != requested->GetExtend().width || running->GetExtend().height != requested->GetExtend().height)
 		return;
 	LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
-	uint32 pixelOutputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0;
+	uint32 pixelOutputMask = pixelShader ? (pixelShader->pixelColorOutputMask | pixelShader->pixelColorZeroMask) : 0;
 	// the pipeline doesn't write color while color output is disabled, see PipelineCompiler::InitBlendState
 	if (LatteGPUState.contextNew.CB_COLOR_CONTROL.get_SPECIAL_OP() == Latte::LATTE_CB_COLOR_CONTROL::E_SPECIALOP::DISABLE)
 		pixelOutputMask = 0;

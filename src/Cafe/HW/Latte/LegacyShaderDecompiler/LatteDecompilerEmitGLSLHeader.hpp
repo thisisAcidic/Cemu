@@ -556,7 +556,7 @@ namespace LatteDecompiler
 			// generate pixel outputs for pixel shader
 			for (uint32 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 			{
-				if ((decompilerContext->shader->pixelColorOutputMask&(1 << i)) != 0)
+				if (((decompilerContext->shader->pixelColorOutputMask | decompilerContext->shader->pixelColorZeroMask) & (1 << i)) != 0)
 				{
 					src->addFmt("layout(location = {}) out vec4 passPixelColor{};" _CRLF, i, i);
 				}

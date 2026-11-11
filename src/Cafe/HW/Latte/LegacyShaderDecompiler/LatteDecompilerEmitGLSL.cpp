@@ -3926,6 +3926,14 @@ void LatteDecompiler_emitGLSLShader(LatteDecompilerShaderContext* shaderContext,
 		src->addFmt("uvec4 attrDecoder;" _CRLF);
 	if (shader->shaderType == LatteConst::ShaderType::Vertex && !shaderContext->options->usesGeometryShader)
 		LatteDecompiler::_emitVSDefaultExports(shaderContext);
+	if (shader->shaderType == LatteConst::ShaderType::Pixel)
+	{
+		for (uint32 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
+		{
+			if ((shader->pixelColorZeroMask & (1 << i)) != 0)
+				src->addFmt("passPixelColor{} = vec4(0.0);" _CRLF, i);
+		}
+	}
 	if (shaderContext->typeTracker.genIntReg)
 		src->addFmt("int backupReg0i, backupReg1i, backupReg2i, backupReg3i, backupReg4i;" _CRLF);
 	if (shaderContext->typeTracker.genFloatReg)

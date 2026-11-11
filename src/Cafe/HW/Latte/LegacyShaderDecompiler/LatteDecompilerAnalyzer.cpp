@@ -831,6 +831,8 @@ void LatteDecompiler_analyze(LatteDecompilerShaderContext* shaderContext, LatteD
 	{
 		LatteDecompiler_analyzeSubroutine(shaderContext, subroutineAddr);
 	}
+	if (shader->shaderType == LatteConst::ShaderType::Pixel && shader->pixelColorOutputMask != 0)
+		shader->pixelColorZeroMask = LatteShader_GetPixelColorZeroMask(shaderContext->contextRegisters) & ~shader->pixelColorOutputMask;
 	// decide which uniform mode to use
 	bool hasAnyDynamicBufferAccess = false;
 	bool hasAnyBufferAccess = false;

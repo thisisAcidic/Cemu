@@ -15,6 +15,7 @@ struct LatteFetchShader* LatteSHRC_GetActiveFetchShader();
 LatteDecompilerShader* LatteSHRC_GetActiveVertexShader();
 LatteDecompilerShader* LatteSHRC_GetActiveGeometryShader();
 LatteDecompilerShader* LatteSHRC_GetActivePixelShader();
+uint32 LatteShader_GetPixelColorZeroMask(const uint32* contextRegisters);
 
 LatteDecompilerShader* LatteSHRC_FindVertexShader(uint64 baseHash, uint64 auxHash);
 LatteDecompilerShader* LatteSHRC_FindGeometryShader(uint64 baseHash, uint64 auxHash);
