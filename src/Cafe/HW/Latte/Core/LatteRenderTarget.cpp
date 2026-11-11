@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 
 #include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/HW/Latte/Core/LatteShaderCache.h"
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
@@ -1069,6 +1070,40 @@ static bool LatteRenderTarget_ShouldUpdatePadWindow()
 	return true;
 }
 
+// The console keeps showing the boot screen on the TV and the GamePad until the game turns on their output, usually after
+// it rendered its first image. Only the first time counts, later the image stays on screen as before.
+static std::atomic_bool s_scanOutputEnabled[2]{}; // TV, GamePad
+static uint32 s_tvImagesWithoutOutput = 0;
+
+void LatteRenderTarget_ResetScanOutput()
+{
+	s_scanOutputEnabled[0] = false;
+	s_scanOutputEnabled[1] = false;
+	s_tvImagesWithoutOutput = 0;
+}
+
+void LatteRenderTarget_EnableScanOutput(bool isPad)
+{
+	if (s_scanOutputEnabled[isPad].exchange(true))
+		return;
+	if (!isPad)
+		LatteShaderCache_EndBootScreen();
+}
+
+static bool LatteRenderTarget_IsScanOutputEnabled(bool isPad)
+{
+	if (s_scanOutputEnabled[isPad])
+		return true;
+	// homebrew that never turns on the TV still gets shown after a while
+	if (!isPad && ++s_tvImagesWithoutOutput > 600)
+	{
+		cemuLog_log(LogType::Force, "TV output was never turned on, showing the image anyway");
+		LatteRenderTarget_EnableScanOutput(false);
+		return true;
+	}
+	return false;
+}
+
 void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uint32 colorBufferWidth, uint32 colorBufferHeight, uint32 colorBufferSliceIndex, uint32 colorBufferFormat, uint32 colorBufferPitch, Latte::E_HWTILEMODE colorBufferTilemode, uint32 colorBufferSwizzle, uint32 renderTarget)
 {
 	cemu_assert_debug(colorBufferSliceIndex == 0); // todo - support for non-zero slice
@@ -1104,7 +1139,7 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 
 	bool showDRC = swkbd::hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 
-	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
+	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive() && LatteRenderTarget_IsScanOutputEnabled(true))
 	{
 		if (s_padUpdateMode != LattePadUpdateMode::Full)
 		{
@@ -1115,7 +1150,7 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 		if (LatteRenderTarget_ShouldUpdatePadWindow())
 			LatteRenderTarget_copyToBackbuffer(texView, true);
 	}
-	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
+	if ((((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC)) && LatteRenderTarget_IsScanOutputEnabled(showDRC))
 		LatteRenderTarget_copyToBackbuffer(texView, false);
 }
 

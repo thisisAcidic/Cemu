@@ -181,6 +181,7 @@ namespace GX2
 	void _GX2DriverReset()
 	{
 		LatteGPUState.gx2InitCalled = 0;
+		LatteRenderTarget_ResetScanOutput();
         sGX2MainCoreIndex = 0;
         GX2CommandResetToDefaultState();
         GX2EventResetToDefaultState();
@@ -204,6 +205,18 @@ namespace GX2
 		Latte::E_GX2SURFFMT surfaceFormat = (Latte::E_GX2SURFFMT)_surfaceFormat;
 		LatteGPUState.tvBufferUsesSRGB = HAS_FLAG(surfaceFormat, Latte::E_GX2SURFFMT::FMT_BIT_SRGB);
 		// todo - actually allocate a scanbuffer
+	}
+
+	void GX2SetTVEnable(uint32 enable)
+	{
+		if (enable)
+			LatteRenderTarget_EnableScanOutput(false);
+	}
+
+	void GX2SetDRCEnable(uint32 enable)
+	{
+		if (enable)
+			LatteRenderTarget_EnableScanOutput(true);
 	}
 
 	void GX2SetTVGamma(float gamma)
@@ -335,6 +348,8 @@ namespace GX2
 		cafeExportRegister("gx2", GX2ResetGPU, LogType::GX2);
 
 		cafeExportRegister("gx2", GX2SetTVBuffer, LogType::GX2);
+		cafeExportRegister("gx2", GX2SetTVEnable, LogType::GX2);
+		cafeExportRegister("gx2", GX2SetDRCEnable, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetTVGamma, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetDRCGamma, LogType::GX2);
 

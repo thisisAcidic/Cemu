@@ -171,6 +171,8 @@ enum class LattePadUpdateMode : uint8
 };
 void LatteRenderTarget_SetPadUpdatePolicy(LattePadUpdateMode mode, bool padIsMainScreen);
 void LatteRenderTarget_NotifyPadTouched();
+void LatteRenderTarget_EnableScanOutput(bool isPad);
+void LatteRenderTarget_ResetScanOutput();
 void LatteRenderTarget_NotifyPadImageChanged();
 
 void LatteTiming_Init();

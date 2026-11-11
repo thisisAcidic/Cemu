@@ -61,6 +61,7 @@ struct
 	// pipeline loading
 	uint32 loadedPipelines;
 	sint32 pipelineFileCount;
+	std::chrono::steady_clock::time_point loadingStarted;
 }g_shaderCacheLoaderState;
 
 FileCache* s_shaderCacheGeneric = nullptr;	// contains hardware and version independent shader information
@@ -275,6 +276,12 @@ class BootSoundPlayer
 };
 static BootSoundPlayer g_bootSndPlayer;
 
+// called when the game turns on the TV output, which ends the boot screen on the console
+void LatteShaderCache_EndBootScreen()
+{
+	g_bootSndPlayer.FadeOutSound();
+}
+
 void LatteShaderCache_finish()
 {
 	switch (g_renderer->GetType())
@@ -360,6 +367,7 @@ void LatteShaderCache_Load()
 	uint64 cacheTitleId = CafeSystem::GetForegroundTitleId();
 
 	const auto timeLoadStart = now_cached();
+	g_shaderCacheLoaderState.loadingStarted = tick_cached();
 	// remember current amount of committed memory
 #if BOOST_OS_WINDOWS
 	PROCESS_MEMORY_COUNTERS pmc1;
@@ -526,17 +534,12 @@ void LatteShaderCache_Load()
 	if (g_shaderCacheLoaderState.textureDRCId)
 		g_renderer->DeleteTexture(g_shaderCacheLoaderState.textureDRCId);
 
-	g_bootSndPlayer.FadeOutSound();
-
 	if(Latte_GetStopSignal())
 		LatteThread_Exit();
 }
 
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines)
 {
-	const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
-	const auto textColor = 0xFF888888;
-
 	auto lastFrameUpdate = tick_cached();
 
 	while (true)
@@ -552,100 +555,22 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 		if ((tick_cached() - lastFrameUpdate) < std::chrono::milliseconds(1000 / 20)) // -> aim for 20 FPS
 			continue;
 
-		int w, h;
-		WindowSystem::GetWindowPhysSize(w, h);
-		const Vector2f window_size{ (float)w,(float)h };
-
-		ImGui_GetFont(window_size.y / 32.0f); // = 24 by default
-		ImGui_GetFont(window_size.y / 48.0f); // = 16
-
 		g_renderer->BeginFrame(true);
 		if (g_renderer->ImguiBegin(true))
 		{
-			auto& io = ImGui::GetIO();
-
-			// render background texture
+			// like on the console only the boot image is shown. If loading takes longer, for example after a driver
+			// update emptied the driver's pipeline cache, a thin bar at the bottom shows the progress
 			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureTVId, 1280, 720);
-
-			const auto progress_font = ImGui_GetFont(window_size.y / 32.0f); // = 24 by default
-			const auto shader_count_font = ImGui_GetFont(window_size.y / 48.0f); // = 16
-
-			ImVec2 position = { window_size.x / 2.0f, window_size.y / 2.0f };
-			ImVec2 pivot = { 0.5f, 0.5f };
-			ImVec2 progress_size = { io.DisplaySize.x * 0.5f, 0 };
-			ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
-			ImGui::SetNextWindowSize(progress_size, ImGuiCond_Always);
-			ImGui::SetNextWindowBgAlpha(0.8f);
-			ImGui::PushStyleColor(ImGuiCol_PlotHistogram, textColor);
-			ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
-			ImGui::PushFont(progress_font);
-
-			std::string titleText = "Shader progress";
-
-			if (ImGui::Begin(titleText.c_str(), nullptr, kPopupFlags))
+			if ((tick_cached() - g_shaderCacheLoaderState.loadingStarted) > std::chrono::seconds(3))
 			{
-				const float width = ImGui::GetWindowSize().x / 2.0f;
-
-				std::string text;
+				float progress;
 				if (isPipelines)
-				{
-					text = "Loading cached pipelines...";
-				}
+					progress = (float)g_shaderCacheLoaderState.loadedPipelines / (float)std::max(g_shaderCacheLoaderState.pipelineFileCount, 1);
 				else
-				{
-					if (shaderCacheScreenStats.compiledShaderCount >= 3)
-						text = "Compiling cached shaders...";
-					else
-						text = "Loading cached shaders...";
-				}
-
-				ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
-				ImGui::Text("%s", text.c_str());
-
-				float percentLoaded;
-				if(isPipelines)
-					percentLoaded = (float)g_shaderCacheLoaderState.loadedPipelines / (float)g_shaderCacheLoaderState.pipelineFileCount;
-				else
-					percentLoaded = (float)g_shaderCacheLoaderState.loadedShaderFiles / (float)g_shaderCacheLoaderState.shaderFileCount;
-				ImGui::ProgressBar(percentLoaded, { -1, 0 }, "");
-
-				if (isPipelines)
-					text = fmt::format("{}/{} ({}%)", g_shaderCacheLoaderState.loadedPipelines, g_shaderCacheLoaderState.pipelineFileCount, (int)(percentLoaded * 100));
-				else
-					text = fmt::format("{}/{} ({}%)", g_shaderCacheLoaderState.loadedShaderFiles, g_shaderCacheLoaderState.shaderFileCount, (int)(percentLoaded * 100));
-				ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
-				ImGui::Text("%s", text.c_str());
-			}
-			ImGui::End();
-			ImGui::PopFont();
-			ImGui::PopStyleColor(2);
-
-			if (!isPipelines)
-			{
-				position = { 10, window_size.y - 10 };
-				pivot = { 0, 1 };
-				ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
-				ImGui::SetNextWindowBgAlpha(0.8f);
-				ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
-				ImGui::PushFont(shader_count_font);
-				if (ImGui::Begin("Shader count", nullptr, kPopupFlags))
-				{
-					const float offset = shader_count_font->FallbackAdvanceX * 25.f;
-					ImGui::Text("Vertex shaders");
-					ImGui::SameLine(offset);
-					ImGui::Text("%d", shaderCacheScreenStats.vertexShaderCount);
-
-					ImGui::Text("Pixel shaders");
-					ImGui::SameLine(offset);
-					ImGui::Text("%d", shaderCacheScreenStats.pixelShaderCount);
-
-					ImGui::Text("Geometry shaders");
-					ImGui::SameLine(offset);
-					ImGui::Text("%d", shaderCacheScreenStats.geometryShaderCount);
-				}
-				ImGui::End();
-				ImGui::PopStyleColor();
-				ImGui::PopFont();
+					progress = (float)g_shaderCacheLoaderState.loadedShaderFiles / (float)std::max(g_shaderCacheLoaderState.shaderFileCount, 1);
+				const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+				const float barHeight = std::max(2.0f, displaySize.y / 180.0f);
+				ImGui::GetForegroundDrawList()->AddRectFilled({0.0f, displaySize.y - barHeight}, {displaySize.x * std::min(progress, 1.0f), displaySize.y}, IM_COL32(255, 255, 255, 160));
 			}
 			g_renderer->ImguiEnd();
 			lastFrameUpdate = tick_cached();
