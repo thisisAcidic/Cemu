@@ -753,6 +753,8 @@ private:
 	uint32 m_recordedDrawcalls{}; // number of drawcalls recorded into current command buffer
 	uint32 m_submitThreshold{}; // submit current buffer if recordedDrawcalls exceeds this number
 	bool m_submitOnIdle{}; // submit current buffer if Latte command processor goes into idle state (no more commands or waiting for externally signaled condition)
+	bool m_submitSoonRequested{}; // set by RequestSubmitSoon, the submit must not wait for the render pass to end
+	bool m_submitAtNextRenderPass{}; // the draw threshold was reached, submit before the next render pass begins
 
 	// drawcall handling
 	void draw_execute_first(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext);

@@ -2480,12 +2480,15 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 	m_recordedDrawcalls = 0;
 	m_submitThreshold = 300;
 	m_submitOnIdle = false;
+	m_submitSoonRequested = false;
+	m_submitAtNextRenderPass = false;
 }
 
 // submit within next 10 drawcalls
 void VulkanRenderer::RequestSubmitSoon()
 {
 	m_submitThreshold = std::min(m_submitThreshold, m_recordedDrawcalls + 10);
+	m_submitSoonRequested = true;
 }
 
 // command buffer will be submitted when GPU has no more commands to process or when threshold is reached

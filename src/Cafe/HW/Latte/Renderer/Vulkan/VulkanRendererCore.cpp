@@ -1883,6 +1883,9 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
 
 void VulkanRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
 {
+	// before anything of this draw is recorded
+	if (m_submitAtNextRenderPass && m_state.activeRenderpassFBO != (drawcallContext.isFirst ? m_state.requestedFBO : m_state.activeFBO))
+		SubmitCommandBuffer();
 	if (drawcallContext.isFirst)
 		draw_execute_first(baseVertex, baseInstance, instanceCount, count, indexDataMPTR, indexType, drawcallContext);
 	else
@@ -1968,7 +1971,12 @@ void VulkanRenderer::draw_endSequence()
 	m_recordedDrawcalls++;
 	if (m_recordedDrawcalls >= m_submitThreshold || hasReadback)
 	{
-		SubmitCommandBuffer();
+		// A submit ends the render pass, which costs a store and reload of all its attachments on tiled GPUs. Unless
+		// the submit is urgent, it waits until the next draw needs another render pass anyway
+		if (!hasReadback && !m_submitSoonRequested && m_state.activeRenderpassFBO && m_recordedDrawcalls < m_submitThreshold + 200)
+			m_submitAtNextRenderPass = true;
+		else
+			SubmitCommandBuffer();
 	}
 }
 
