@@ -87,7 +87,9 @@ Your saves, graphic packs, game profiles and shader caches can be taken along. B
 - *Settings > General settings > GamePad screen frame rate*: *Automatic* only redraws the GamePad image when it changes and at most 30 times per second, which saves power in most games. Use *Always full* if a game shows something on the GamePad that has to move smoothly.
 - On dual screen devices the GamePad image goes to the second screen. *Swap screens* in the same place swaps the TV and GamePad images.
 - *Shader multiplication accuracy* in a game's profile (long press the game, *Edit game profile*) is on by default because some games need it. Turning it off makes the GPU work noticeably less. Cidemu already turns it off for LEGO City Undercover, which saves about 0.3 to 0.4 W there without visible differences. If a game shows graphical errors with it off, turn it back on.
+- *Settings > Graphics settings > Anti-aliasing (FXAA)* smooths jagged edges of the TV image. It only touches pixels on edges, so textures stay sharp.
 - *Settings > Graphics settings > Custom drivers* installs Adreno drivers such as Turnip. The system driver is the default and usually the best choice on Snapdragon 8 Gen 2 devices.
+- Games start like on the console: the screens turn black, then show the game's boot images with its boot sound until the game shows its own image. *Settings > Audio settings > Boot sound* turns the sound off.
 
 ### Recommended clock limits for the AYN Thor
 
