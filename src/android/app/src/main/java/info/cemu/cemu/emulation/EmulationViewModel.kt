@@ -37,7 +37,8 @@ import kotlinx.coroutines.launch
 data class SideMenuState(
     val isMotionEnabled: Boolean = false,
     val isTVReplacedWithPad: Boolean = false,
-    val isPadVisible: Boolean = false,
+    // null until changed in the menu, see ScreenPlacement.padHasOwnScreen
+    val isPadVisible: Boolean? = null,
     val isInputOverlayVisible: Boolean = false,
 )
 

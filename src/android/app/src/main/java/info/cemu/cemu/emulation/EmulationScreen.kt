@@ -109,6 +109,15 @@ fun EmulationScreen(
     val sideMenuState by viewModel.sideMenuState.collectAsState()
     val emulationSettings by viewModel.emulationSettings.collectAsState()
     val secondaryDisplays = rememberSecondaryDisplays()
+    val placement = emulationSettings?.let {
+        placeScreens(
+            secondaryDisplayId = secondaryDisplays.builtInDisplayId,
+            externalDisplayId = secondaryDisplays.externalDisplayId,
+            swapScreens = it.swapScreens,
+            externalDisplayPadScreen = it.externalDisplayPadScreen,
+        )
+    }
+    val isPadVisible = sideMenuState.isPadVisible ?: (placement?.padHasOwnScreen ?: false)
     val isInputOverlayVisible by viewModel.isInputOverlayVisible.collectAsState()
     val inputOverlaySettings by viewModel.inputOverlaySettings.collectAsState()
 
@@ -166,6 +175,7 @@ fun EmulationScreen(
                 ) {
                     EmulationSideMenuContent(
                         sideMenuState = sideMenuState,
+                        isPadVisible = isPadVisible,
                         canSwapScreens = secondaryDisplays.builtInDisplayId != null && secondaryDisplays.externalDisplayId == null,
                         swapScreens = emulationSettings?.swapScreens ?: false,
                         onSwapScreensChange = {
@@ -201,9 +211,9 @@ fun EmulationScreen(
         },
     ) {
         EmulationSurfaces(
-            sideMenuState = sideMenuState,
+            isPadVisible = isPadVisible,
             emulationSettings = emulationSettings,
-            secondaryDisplays = secondaryDisplays,
+            placement = placement,
             mainHolderCallback = viewModel.mainHolderCallback,
             padHolderCallback = viewModel.padHolderCallback,
             onInitializeEmulation = viewModel::initializeEmulation,
@@ -305,6 +315,7 @@ private fun EditInputsLayout(
 @Composable
 private fun EmulationSideMenuContent(
     sideMenuState: SideMenuState,
+    isPadVisible: Boolean,
     canSwapScreens: Boolean,
     swapScreens: Boolean,
     onSwapScreensChange: (Boolean) -> Unit,
@@ -328,7 +339,7 @@ private fun EmulationSideMenuContent(
 
     CheckboxItem(
         label = tr("Show PAD"),
-        checked = sideMenuState.isPadVisible,
+        checked = isPadVisible,
         onCheckedChange = { updateState(sideMenuState.copy(isPadVisible = it)) },
     )
 
@@ -432,23 +443,16 @@ private fun rememberSecondaryDisplays(): SecondaryDisplays {
 
 @Composable
 private fun EmulationSurfaces(
-    sideMenuState: SideMenuState,
+    isPadVisible: Boolean,
     emulationSettings: EmulationSettings?,
-    secondaryDisplays: SecondaryDisplays,
+    placement: ScreenPlacement?,
     mainHolderCallback: SurfaceHolder.Callback,
     padHolderCallback: SurfaceHolder.Callback,
     onInitializeEmulation: () -> Unit
 ) {
-    if (emulationSettings == null) {
+    if (emulationSettings == null || placement == null) {
         return
     }
-
-    val placement = placeScreens(
-        secondaryDisplayId = secondaryDisplays.builtInDisplayId,
-        externalDisplayId = secondaryDisplays.externalDisplayId,
-        swapScreens = emulationSettings.swapScreens,
-        externalDisplayPadScreen = emulationSettings.externalDisplayPadScreen,
-    )
 
     // the GamePad is the screen the player looks at when the TV image went to another display
     val padIsMainScreen = placement.pad == ScreenTarget.Activity && placement.tv is ScreenTarget.Display
@@ -467,10 +471,11 @@ private fun EmulationSurfaces(
     }
     val pad = placement.pad
     if (pad is ScreenTarget.Display) {
+        // a hidden GamePad image leaves its screen black, the emulation then skips drawing it
         SurfacePresentation(
             displayId = pad.displayId,
             isTV = false,
-            holderCallback = padHolderCallback,
+            holderCallback = padHolderCallback.takeIf { isPadVisible },
         )
     }
 
@@ -502,16 +507,16 @@ private fun EmulationSurfaces(
             LinearLayout(gamePadPosition.isVertical()) { itemModifier ->
                 if (gamePadPosition.appearsAfterTV()) {
                     MainSurface(itemModifier)
-                    if (sideMenuState.isPadVisible) PadSurface(itemModifier)
+                    if (isPadVisible) PadSurface(itemModifier)
                 } else {
-                    if (sideMenuState.isPadVisible) PadSurface(itemModifier)
+                    if (isPadVisible) PadSurface(itemModifier)
                     MainSurface(itemModifier)
                 }
             }
         }
 
         isTVInActivity -> MainSurface(Modifier.fillMaxSize())
-        isPadInActivity -> PadSurface(Modifier.fillMaxSize())
+        isPadInActivity && isPadVisible -> PadSurface(Modifier.fillMaxSize())
         else -> Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -524,7 +529,8 @@ private fun EmulationSurfaces(
 private fun SurfacePresentation(
     displayId: Int,
     isTV: Boolean,
-    holderCallback: SurfaceHolder.Callback,
+    // without one the display stays black
+    holderCallback: SurfaceHolder.Callback?,
     onSurfaceChanged: () -> Unit = {},
 ) {
     val activity = LocalActivity.current ?: return
@@ -534,7 +540,7 @@ private fun SurfacePresentation(
     }
 
     // both stay on their display while this activity is in the background, so only show them while it is started
-    LifecycleStartEffect(displayId, isTV, canStartActivitiesOnDisplays) {
+    LifecycleStartEffect(displayId, isTV, holderCallback, canStartActivitiesOnDisplays) {
         if (canStartActivitiesOnDisplays) {
             EmulationDisplays.show(activity, displayId, EmulationDisplays.Content(isTV, holderCallback) { currentOnSurfaceChanged() })
             onStopOrDispose {

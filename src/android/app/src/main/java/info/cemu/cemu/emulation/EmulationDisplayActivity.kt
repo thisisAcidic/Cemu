@@ -13,6 +13,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.View
 import android.view.WindowInsets
 import java.lang.ref.WeakReference
 
@@ -40,19 +41,25 @@ class EmulationDisplayActivity : Activity() {
 
         window.setWindowAnimations(0)
 
-        setContentView(SurfaceView(this).apply {
-            setOnTouchListener(CanvasOnTouchListener(content.isTV))
-            holder.addCallback(content.holderCallback)
-            holder.addCallback(object : SurfaceHolder.Callback {
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                    content.onSurfaceChanged()
-                }
+        val holderCallback = content.holderCallback
+        if (holderCallback == null) {
+            // without a surface the black window background covers the display
+            setContentView(View(this))
+        } else {
+            setContentView(SurfaceView(this).apply {
+                setOnTouchListener(CanvasOnTouchListener(content.isTV))
+                holder.addCallback(holderCallback)
+                holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                        content.onSurfaceChanged()
+                    }
 
-                override fun surfaceCreated(holder: SurfaceHolder) {}
+                    override fun surfaceCreated(holder: SurfaceHolder) {}
 
-                override fun surfaceDestroyed(holder: SurfaceHolder) {}
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {}
+                })
             })
-        })
+        }
         window.insetsController?.hide(WindowInsets.Type.systemBars())
     }
 
@@ -108,7 +115,7 @@ class EmulationDisplayActivity : Activity() {
 object EmulationDisplays {
     class Content(
         val isTV: Boolean,
-        val holderCallback: SurfaceHolder.Callback,
+        val holderCallback: SurfaceHolder.Callback?,
         val onSurfaceChanged: () -> Unit,
     )
 

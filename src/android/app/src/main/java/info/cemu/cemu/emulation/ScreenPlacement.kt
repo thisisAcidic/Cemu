@@ -7,7 +7,14 @@ sealed interface ScreenTarget {
     data class Display(val displayId: Int) : ScreenTarget
 }
 
-data class ScreenPlacement(val tv: ScreenTarget, val pad: ScreenTarget)
+data class ScreenPlacement(val tv: ScreenTarget, val pad: ScreenTarget) {
+    /**
+     * Whether the GamePad image has a screen to itself. It is shown there unless turned off in the menu, while next to
+     * the TV image in the same activity it only appears when turned on.
+     */
+    val padHasOwnScreen: Boolean
+        get() = tv != ScreenTarget.Activity || pad != ScreenTarget.Activity
+}
 
 fun placeScreens(
     secondaryDisplayId: Int?,
