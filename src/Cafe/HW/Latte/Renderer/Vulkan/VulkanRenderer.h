@@ -329,6 +329,7 @@ public:
 	void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
 
 	void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) override;
+	bool texture_canAliasWithFormat(const LatteTexture* texture, Latte::E_GX2SURFFMT format) const override;
 	LatteTextureReadbackInfo* texture_createReadback(LatteTextureView* textureView) override;
 
 	// clears are delayed until the texture is used, see texture_clearLater

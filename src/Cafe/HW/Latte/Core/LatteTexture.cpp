@@ -865,8 +865,8 @@ VIEWCOMPATIBILITY LatteTexture_CanTextureBeRepresentedAsView(LatteTexture* baseT
 		}
 
 		// AMD has a bug on OpenGL where it ignores the internal format of texture views when they are bound as render targets,
-		// as a result we cant use texture views when they have a different format
-		if (baseTexture->format != format)
+		// as a result we cant use texture views when they have a different format there
+		if (baseTexture->format != format && !g_renderer->texture_canAliasWithFormat(baseTexture, format))
 			return VIEW_NOT_COMPATIBLE;
 
 		if ((firstMip + numMip) > baseTexture->mipLevels || (firstSlice + numSlice) > baseTexture->depth)
@@ -917,8 +917,8 @@ VIEWCOMPATIBILITY LatteTexture_CanTextureBeRepresentedAsView(LatteTexture* baseT
 				}
 
 				// AMD has a bug on OpenGL where it ignores the internal format of texture views when they are bound as render targets,
-				// as a result we cant use texture views when they have a different format
-				if (baseTexture->format != format)
+				// as a result we cant use texture views when they have a different format there
+				if (baseTexture->format != format && !g_renderer->texture_canAliasWithFormat(baseTexture, format))
 					return VIEW_NOT_COMPATIBLE;
 
 				if ((m + firstMip + numMip) > baseTexture->mipLevels || (s + firstSlice + numSlice) > baseTexture->depth)

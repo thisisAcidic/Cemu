@@ -121,6 +121,8 @@ public:
 	virtual void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) = 0;
 	virtual void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) = 0;
 
+	// true if a view of the texture can use another format of the same size, so both share the texture's memory
+	virtual bool texture_canAliasWithFormat(const LatteTexture* texture, Latte::E_GX2SURFFMT format) const { return false; }
 	virtual LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth) = 0;
 
 	virtual void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) = 0;

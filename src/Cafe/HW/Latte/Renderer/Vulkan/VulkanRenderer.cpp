@@ -4441,6 +4441,69 @@ void VulkanRenderer::texture_setLatteTexture(LatteTextureView* textureView, uint
 	m_state.boundTexture[textureUnit] = static_cast<LatteTextureViewVk*>(textureView);
 }
 
+static uint32 _GetUncompressedColorFormatSize(VkFormat format)
+{
+	switch (format)
+	{
+	case VK_FORMAT_R8_UNORM:
+	case VK_FORMAT_R8_SNORM:
+	case VK_FORMAT_R8_UINT:
+	case VK_FORMAT_R4G4_UNORM_PACK8:
+		return 1;
+	case VK_FORMAT_R8G8_UNORM:
+	case VK_FORMAT_R8G8_SNORM:
+	case VK_FORMAT_R16_UNORM:
+	case VK_FORMAT_R16_SNORM:
+	case VK_FORMAT_R16_UINT:
+	case VK_FORMAT_R16_SFLOAT:
+	case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+	case VK_FORMAT_R5G6B5_UNORM_PACK16:
+	case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+	case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+		return 2;
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_R8G8B8A8_SNORM:
+	case VK_FORMAT_R8G8B8A8_UINT:
+	case VK_FORMAT_R8G8B8A8_SINT:
+	case VK_FORMAT_R16G16_UNORM:
+	case VK_FORMAT_R16G16_SFLOAT:
+	case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+	case VK_FORMAT_A2R10G10B10_SNORM_PACK32:
+	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+		return 4;
+	case VK_FORMAT_R16G16B16A16_UNORM:
+	case VK_FORMAT_R16G16B16A16_SNORM:
+	case VK_FORMAT_R16G16B16A16_UINT:
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+	case VK_FORMAT_R32G32_UINT:
+	case VK_FORMAT_R32G32_SFLOAT:
+		return 8;
+	case VK_FORMAT_R32G32B32A32_UINT:
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+		return 16;
+	default:
+		return 0;
+	}
+}
+
+// Color textures are created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, so a view can use any format of the same size.
+// That only gives the console's result if both host formats store the bits like the guest formats do
+bool VulkanRenderer::texture_canAliasWithFormat(const LatteTexture* texture, Latte::E_GX2SURFFMT format) const
+{
+	const LatteTextureVk* textureVk = static_cast<const LatteTextureVk*>(texture);
+	if (texture->isDepth || textureVk->m_isAlternateFormat || Latte::IsCompressedFormat(texture->format) || Latte::IsCompressedFormat(format))
+		return false;
+	FormatInfoVK viewFormatInfo;
+	const_cast<VulkanRenderer*>(this)->GetTextureFormatInfoVK(format, false, texture->dim, 0, 0, &viewFormatInfo);
+	if (viewFormatInfo.isAlternateFormat)
+		return false;
+	uint32 size = _GetUncompressedColorFormatSize(textureVk->GetFormat());
+	return size != 0 && size == _GetUncompressedColorFormatSize(viewFormatInfo.vkImageFormat);
+}
+
 void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth)
 {
 	LatteTextureVk* srcVk = static_cast<LatteTextureVk*>(src);
