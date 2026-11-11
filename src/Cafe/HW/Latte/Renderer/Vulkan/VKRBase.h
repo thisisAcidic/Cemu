@@ -231,4 +231,5 @@ public:
 	~VKRObjectDescriptorSet() override;
 
 	VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
+	VkDescriptorPool pool{ VK_NULL_HANDLE };
 };

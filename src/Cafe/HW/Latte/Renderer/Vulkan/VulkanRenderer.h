@@ -38,6 +38,7 @@ struct VkDescriptorSetInfo
 	LatteConst::ShaderType shaderType{};
 	uint64 stateHash{};
 	class PipelineInfo* pipeline_info{};
+	uint32 lastUsedFrame{};
 
 	// tracking for allocated descriptors
 	uint8 statsNumSamplerTextures{ 0 };
@@ -272,6 +273,9 @@ public:
 	// resource destruction queue
 	void ReleaseDestructibleObject(VKRDestructibleObject* destructibleObject);
 	void ProcessDestructionQueue();
+	void ReleaseUnusedDescriptorSets(uint32 minUnusedFrames);
+	VkDescriptorPool AllocateDrawDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& descriptorSet);
+	uint32 m_descriptorSetFrame{};
 
 	FSpinlock m_spinlockDestructionQueue;
 	std::vector<VKRDestructibleObject*> m_destructionQueue;
@@ -289,6 +293,7 @@ public:
 	bool SupportsPadImageChangeTracking() const override { return true; }
 	void TrackPadImageChanges(LatteTextureView* texView) override;
 	void CreateDescriptorPool();
+	VkDescriptorPool CreateDrawDescriptorPool();
 	VkDescriptorSet backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter);
 
 	robin_hood::unordered_flat_map<uint64, robin_hood::unordered_flat_map<uint64, PipelineInfo*> > m_pipeline_info_cache; // using robin_hood::unordered_flat_map is twice as fast (1-2% overall CPU time reduction)
@@ -465,6 +470,8 @@ private:
 	VkRenderPass m_imguiRenderPass = VK_NULL_HANDLE;
 
 	VkDescriptorPool m_descriptorPool;
+	std::vector<VkDescriptorPool> m_drawDescriptorPools;
+	size_t m_drawDescriptorPoolIndex{};
 
   public:
 	struct QueueFamilyIndices

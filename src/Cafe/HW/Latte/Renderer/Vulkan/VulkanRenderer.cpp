@@ -991,6 +991,10 @@ VulkanRenderer::~VulkanRenderer()
 	while(!m_destructionQueue.empty())
 		ProcessDestructionQueue();
 
+	for (VkDescriptorPool pool : m_drawDescriptorPools)
+		vkDestroyDescriptorPool(m_logicalDevice, pool, nullptr);
+	m_drawDescriptorPools.clear();
+
 	// destroy memory manager
 	memoryManager.reset();
 
@@ -3413,6 +3417,12 @@ void VulkanRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
 	SubmitCommandBuffer();
 
+	// a descriptor set stays cached as long as its pipeline and textures exist, which can be the whole session. Sets that
+	// weren't used for a while are released, so open world games don't keep the sets of places they passed long ago
+	m_descriptorSetFrame++;
+	if ((m_descriptorSetFrame % 120) == 0)
+		ReleaseUnusedDescriptorSets(600);
+
 	if (swapTV && IsSwapchainInfoValid(true))
 		SwapBuffer(true);
 
@@ -3810,6 +3820,30 @@ void VulkanRenderer::TrackPadImageChanges(LatteTextureView* texView)
 
 void VulkanRenderer::CreateDescriptorPool()
 {
+	// for ImGui and the backbuffer blits, the sets of draws and surface copies come from the draw pools
+	std::array<VkDescriptorPoolSize, 2> poolSizes = {};
+	poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	poolSizes[0].descriptorCount = 1024 * 16;
+	poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizes[1].descriptorCount = 1024 * 16;
+
+	VkDescriptorPoolCreateInfo poolInfo = {};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = poolSizes.size();
+	poolInfo.pPoolSizes = poolSizes.data();
+	poolInfo.maxSets = 1024 * 16;
+	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+
+	if (vkCreateDescriptorPool(m_logicalDevice, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS)
+		UnrecoverableError("Failed to create descriptor pool!");
+
+	m_drawDescriptorPools.emplace_back(CreateDrawDescriptorPool());
+	if (m_drawDescriptorPools.back() == VK_NULL_HANDLE)
+		UnrecoverableError("Failed to create descriptor pool!");
+}
+
+VkDescriptorPool VulkanRenderer::CreateDrawDescriptorPool()
+{
 	std::array<VkDescriptorPoolSize, 4> poolSizes = {};
 	poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	poolSizes[0].descriptorCount = 1024 * 128;
@@ -3827,8 +3861,45 @@ void VulkanRenderer::CreateDescriptorPool()
 	poolInfo.maxSets = 1024 * 256;
 	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
-	if (vkCreateDescriptorPool(m_logicalDevice, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS)
-		UnrecoverableError("Failed to create descriptor pool!");
+	VkDescriptorPool pool = VK_NULL_HANDLE;
+	if (vkCreateDescriptorPool(m_logicalDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS)
+		return VK_NULL_HANDLE;
+	return pool;
+}
+
+// Drivers like the one for Adreno GPUs don't let a pool hold more than it was created for, and some games use more
+// descriptors within a few seconds than one pool has, for example Need for Speed: Most Wanted U while driving through
+// the city. So pools are added when the others are full. Returns the pool of the set, or VK_NULL_HANDLE.
+VkDescriptorPool VulkanRenderer::AllocateDrawDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& descriptorSet)
+{
+	constexpr size_t MAX_DRAW_DESCRIPTOR_POOLS = 8;
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &layout;
+	// start with the pool that worked last time
+	for (size_t i = 0; i < m_drawDescriptorPools.size(); i++)
+	{
+		const size_t index = (m_drawDescriptorPoolIndex + i) % m_drawDescriptorPools.size();
+		allocInfo.descriptorPool = m_drawDescriptorPools[index];
+		if (vkAllocateDescriptorSets(m_logicalDevice, &allocInfo, &descriptorSet) == VK_SUCCESS)
+		{
+			m_drawDescriptorPoolIndex = index;
+			return m_drawDescriptorPools[index];
+		}
+	}
+	if (m_drawDescriptorPools.size() >= MAX_DRAW_DESCRIPTOR_POOLS)
+		return VK_NULL_HANDLE;
+	VkDescriptorPool pool = CreateDrawDescriptorPool();
+	if (pool == VK_NULL_HANDLE)
+		return VK_NULL_HANDLE;
+	m_drawDescriptorPools.emplace_back(pool);
+	cemuLog_log(LogType::Force, "Vulkan: Descriptor pools full, added pool {}", m_drawDescriptorPools.size());
+	allocInfo.descriptorPool = pool;
+	if (vkAllocateDescriptorSets(m_logicalDevice, &allocInfo, &descriptorSet) != VK_SUCCESS)
+		return VK_NULL_HANDLE;
+	m_drawDescriptorPoolIndex = m_drawDescriptorPools.size() - 1;
+	return pool;
 }
 
 VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter)
@@ -3989,6 +4060,28 @@ void VulkanRenderer::ProcessDestructionQueue()
 		++it;
 	}
 	m_spinlockDestructionQueue.unlock();
+}
+
+void VulkanRenderer::ReleaseUnusedDescriptorSets(uint32 minUnusedFrames)
+{
+	std::vector<VkDescriptorSetInfo*> unused;
+	for (auto& pipelines : m_pipeline_info_cache)
+	{
+		for (auto& pipeline : pipelines.second)
+		{
+			for (auto shaderType : {LatteConst::ShaderType::Vertex, LatteConst::ShaderType::Pixel, LatteConst::ShaderType::Geometry})
+			{
+				for (auto& entry : pipeline.second->GetDescriptorSetCache(shaderType))
+				{
+					if (m_descriptorSetFrame - entry.second->lastUsedFrame >= minUnusedFrames)
+						unused.emplace_back(entry.second);
+				}
+			}
+		}
+	}
+	// deleting removes them from the cache and queues the Vulkan descriptor sets for when the GPU is done with them
+	for (VkDescriptorSetInfo* dsInfo : unused)
+		delete dsInfo;
 }
 
 VkDescriptorSetInfo::~VkDescriptorSetInfo()
@@ -5073,6 +5166,7 @@ VKRObjectDescriptorSet::VKRObjectDescriptorSet()
 VKRObjectDescriptorSet::~VKRObjectDescriptorSet()
 {
 	auto vkr = VulkanRenderer::GetInstance();
-	vkFreeDescriptorSets(vkr->GetLogicalDevice(), vkr->GetDescriptorPool(), 1, &descriptorSet);
+	if (descriptorSet != VK_NULL_HANDLE)
+		vkFreeDescriptorSets(vkr->GetLogicalDevice(), pool, 1, &descriptorSet);
 	performanceMonitor.vk.numDescriptorSets.decrement();
 }

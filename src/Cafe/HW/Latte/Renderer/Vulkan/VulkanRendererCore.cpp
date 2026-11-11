@@ -592,7 +592,10 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 	auto& ds_cache = pipeline_info->GetDescriptorSetCache(shader->shaderType);
 	const auto it = ds_cache.find(stateHash);
 	if (it != ds_cache.cend())
+	{
+		it->second->lastUsedFrame = m_descriptorSetFrame;
 		return it->second;
+	}
 
 	VkDescriptorSetLayout descriptor_set_layout;
 	switch (shader->shaderType)
@@ -621,18 +624,22 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 	dsInfo->stateHash = stateHash;
 	dsInfo->shaderType = shader->shaderType;
 	dsInfo->pipeline_info = pipeline_info;
+	dsInfo->lastUsedFrame = m_descriptorSetFrame;
 
 	dsInfo->m_vkObjDescriptorSet = new VKRObjectDescriptorSet();
 	auto vkObjDS = dsInfo->m_vkObjDescriptorSet;
 
-	VkDescriptorSetAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = m_descriptorPool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &descriptor_set_layout;
-
-	VkDescriptorSet result;
-	if (vkAllocateDescriptorSets(m_logicalDevice, &allocInfo, &result) != VK_SUCCESS)
+	VkDescriptorSet result = VK_NULL_HANDLE;
+	vkObjDS->pool = AllocateDrawDescriptorSet(descriptor_set_layout, result);
+	if (vkObjDS->pool == VK_NULL_HANDLE)
+	{
+		// all pools are full. Free the sets that weren't used in the last frames once the GPU is done with them
+		ReleaseUnusedDescriptorSets(3);
+		WaitCommandBufferFinished(GetCurrentCommandBufferId() - 1);
+		ProcessDestructionQueue();
+		vkObjDS->pool = AllocateDrawDescriptorSet(descriptor_set_layout, result);
+	}
+	if (vkObjDS->pool == VK_NULL_HANDLE)
 	{
 		UnrecoverableError(fmt::format("Failed to allocate descriptor sets. Currently allocated: Descriptors={} TextureSamplers={} DynUniformBuffers={} StorageBuffers={}",
 			performanceMonitor.vk.numDescriptorSets.get(),

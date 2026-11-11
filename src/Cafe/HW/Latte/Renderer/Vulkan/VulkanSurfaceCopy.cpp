@@ -517,13 +517,8 @@ VKRObjectDescriptorSet* VulkanRenderer::surfaceCopy_getOrCreateDescriptorSet(VkC
 	VKRObjectDescriptorSet* vkObjDescriptorSet = new VKRObjectDescriptorSet();
 
 	// allocate new descriptor set
-	VkDescriptorSetAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = m_descriptorPool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &pipelineInfo->vkObjPipeline->m_pixelDSL;
-
-	if (vkAllocateDescriptorSets(m_logicalDevice, &allocInfo, &vkObjDescriptorSet->descriptorSet) != VK_SUCCESS)
+	vkObjDescriptorSet->pool = AllocateDrawDescriptorSet(pipelineInfo->vkObjPipeline->m_pixelDSL, vkObjDescriptorSet->descriptorSet);
+	if (vkObjDescriptorSet->pool == VK_NULL_HANDLE)
 	{
 		UnrecoverableError("failed to allocate descriptor set for surface copy operation");
 	}
