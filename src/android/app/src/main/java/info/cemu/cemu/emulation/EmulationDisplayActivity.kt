@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.content.Intent
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -22,6 +23,7 @@ import java.lang.ref.WeakReference
 class EmulationDisplayActivity : Activity() {
     // the activity can be moved to another display when its display goes away
     private var displayId = 0
+    private var focusReturned = false
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +51,37 @@ class EmulationDisplayActivity : Activity() {
             })
         })
         window.insetsController?.hide(WindowInsets.Type.systemBars())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Starting this activity moved the input focus to its display, so the Home key would only bring up the home
+        // screen of this display while the game keeps running on the other one. Give the focus back to the emulation
+        // once this activity got it. moveTaskToFront doesn't move the focus to another display when the task already
+        // is the top one there, starting the activity again does. It only gets onNewIntent.
+        if (!hasFocus || focusReturned) {
+            return
+        }
+        focusReturned = true
+        EmulationDisplays.inputActivity?.takeUnless { it.isFinishing }?.let {
+            val intent = Intent(this, it.javaClass)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            val options = ActivityOptions.makeBasic().setLaunchDisplayId(it.display.displayId)
+            startActivity(intent, options.toBundle())
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Something else covers this display, usually its home screen because the Home key went to this display after
+        // it was touched. Show the home screen on the emulation's display too, like the Home key would have there.
+        // Moving the emulation's task to the back would show whatever task happens to be next instead.
+        if (isFinishing || !getSystemService(PowerManager::class.java).isInteractive) {
+            return
+        }
+        val emulation = EmulationDisplays.inputActivity?.takeUnless { it.isFinishing } ?: return
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(home, ActivityOptions.makeBasic().setLaunchDisplayId(emulation.display.displayId).toBundle())
     }
 
     override fun onDestroy() {
