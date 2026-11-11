@@ -3,6 +3,10 @@
 ## Cidemu 0.5
 
 - Fixed Need for Speed: Most Wanted U and LEGO City Undercover stopping after a few minutes of play with "Failed to allocate descriptor sets". While driving through the city, Need for Speed uses more descriptors within a few seconds than the single descriptor pool held, and the Adreno driver doesn't go beyond it. Cidemu now adds pools when they are full and releases descriptor sets that weren't used for about ten seconds. The Cemu Android port has the same limit.
+- Fixed draws that were missing on Adreno GPUs ("Failed to create graphics pipeline. Error -13" in the log). Their pixel shader reads a value that the vertex shader doesn't write. The Wii U GPU passes a default value from `SPI_PS_INPUT_CNTL` in that case, Vulkan requires the vertex shader to write every value, and the Adreno driver rejects the whole pipeline otherwise. Vertex shaders now write the default value. In Need for Speed: Most Wanted U this affected 31 pipelines, among them the trees in its reflections. The first start of each game compiles its shaders again.
+- GX2: Alpha to mask (`GX2SetAlphaToMask`) is supported. Pixels are kept depending on their alpha and their position in a 2x2 dither pattern, like with one sample per pixel on the console. Need for Speed: Most Wanted U uses it for the trees in its reflections.
+- Second screen: *Show PAD* in the menu during a game turns the GamePad screen on and off. It is on by default when the GamePad image has a screen of its own, off switches that screen to black and stops drawing the GamePad image. Next to the TV image on a single screen it stays off by default, like before.
+- The log names the shaders of pipelines that fail to compile.
 
 ## Cidemu 0.4
 
