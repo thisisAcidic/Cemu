@@ -5,6 +5,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- the launcher, to bring back its screen on the second display when a game goes to the background -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.SECONDARY_HOME" />
+        </intent>
+    </queries>
+
     <uses-feature
         android:name="android.hardware.vulkan.version"
         android:required="true"

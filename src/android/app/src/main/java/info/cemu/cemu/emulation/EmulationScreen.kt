@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.view.Display
+import android.os.PowerManager
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -537,6 +539,11 @@ private fun SurfacePresentation(
             EmulationDisplays.show(activity, displayId, EmulationDisplays.Content(isTV, holderCallback) { currentOnSurfaceChanged() })
             onStopOrDispose {
                 EmulationDisplays.hide(displayId)
+                // the game went to the background, for example with the Home key, so both screens show the home screen
+                val stopped = !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                if (stopped && !activity.isFinishing && activity.getSystemService(PowerManager::class.java).isInteractive) {
+                    EmulationDisplays.showHome(activity, displayId)
+                }
             }
         } else {
             val display = activity.getSystemService(DisplayManager::class.java).getDisplay(displayId)

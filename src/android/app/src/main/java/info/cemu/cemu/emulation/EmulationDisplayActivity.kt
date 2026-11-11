@@ -3,7 +3,10 @@ package info.cemu.cemu.emulation
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityOptions
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.PowerManager
 import android.view.KeyEvent
@@ -134,6 +137,26 @@ object EmulationDisplays {
     fun hide(displayId: Int) {
         contents.remove(displayId)
         activities.remove(displayId)?.finish()
+    }
+
+    /**
+     * Shows the home screen on a display after the emulation went to the background. Closing the activity there would
+     * show whatever app was used on that display before, not necessarily the launcher's screen for it.
+     */
+    fun showHome(context: Context, displayId: Int) {
+        val homePackage = context.packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY
+        )?.activityInfo?.packageName ?: return
+        val intent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_SECONDARY_HOME)
+            .setPackage(homePackage)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
+        } catch (_: ActivityNotFoundException) {
+            // the launcher has nothing for other displays
+        } catch (_: SecurityException) {
+        }
     }
 
     fun attach(displayId: Int, activity: EmulationDisplayActivity): Content? {
