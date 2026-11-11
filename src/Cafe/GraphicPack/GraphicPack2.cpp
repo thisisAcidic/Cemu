@@ -737,6 +737,22 @@ bool GraphicPack2::SetActivePreset(std::string_view category, std::string_view n
 	return result;
 }
 
+// custom shader files are named <base hash>_<aux hash>_<type>, for example 9681b92b040e8d08_00000003c92492d9_ps.txt
+static bool ParseCustomShaderFileName(std::string_view name, uint64& baseHash, uint64& auxHash, std::string_view& type)
+{
+	auto parseHash = [&name](uint64& hash) {
+		auto [ptr, ec] = std::from_chars(name.data(), name.data() + name.size(), hash, 16);
+		if (ec != std::errc() || ptr == name.data() || ptr == name.data() + name.size() || *ptr != '_')
+			return false;
+		name.remove_prefix(ptr - name.data() + 1);
+		return true;
+	};
+	if (!parseHash(baseHash) || !parseHash(auxHash))
+		return false;
+	type = name;
+	return true;
+}
+
 void GraphicPack2::LoadShaders()
 {
 	fs::path path = GetRulesPath();
@@ -749,18 +765,20 @@ void GraphicPack2::LoadShaders()
 		{
 			const auto& p = it.path();
 			auto filename = p.filename().wstring();
+			// swscanf can't be used for the hashes, Android's wide string scanf clamps hex values above INT64_MAX
+			const std::string filenameUtf8 = _pathToUtf8(p.filename());
 			uint64 shader_base_hash = 0;
 			uint64 shader_aux_hash = 0;
-			wchar_t shader_type[256]{};
-			if (filename.size() < 256 && swscanf(filename.c_str(), L"%" SCNx64 "_%" SCNx64 "_%ls", &shader_base_hash, &shader_aux_hash, shader_type) == 3)
+			std::string_view shader_type;
+			if (ParseCustomShaderFileName(filenameUtf8, shader_base_hash, shader_aux_hash, shader_type))
 			{
-			    bool isMetalShader = (shader_type[2] == '_' && shader_type[3] == 'm' && shader_type[4] == 's' && shader_type[5] == 'l');
+				bool isMetalShader = shader_type.size() >= 6 && shader_type.substr(2, 4) == "_msl";
 
-				if (shader_type[0] == 'p' && shader_type[1] == 's')
+				if (shader_type.starts_with("ps"))
 					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::PIXEL, isMetalShader));
-				else if (shader_type[0] == 'v' && shader_type[1] == 's')
+				else if (shader_type.starts_with("vs"))
 					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::VERTEX, isMetalShader));
-				else if (shader_type[0] == 'g' && shader_type[1] == 's')
+				else if (shader_type.starts_with("gs"))
 					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::GEOMETRY, isMetalShader));
 			}
 			else if (filename == L"output.glsl")
