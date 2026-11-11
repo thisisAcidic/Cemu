@@ -307,6 +307,7 @@ void LatteShader_CreatePSInputTable(LatteShaderPSInputTable* psInputTable, uint3
 			psInputTable->import[f].semanticId = psSemanticId;
 			psInputTable->import[f].isFlat = (psInputControl&(1 << 10)) != 0;
 			psInputTable->import[f].isNoPerspective = (psInputControl&(1 << 12)) != 0;
+			psInputTable->import[f].defaultValue = defaultValue;
 		}
 	}
 	psInputTable->key = key;

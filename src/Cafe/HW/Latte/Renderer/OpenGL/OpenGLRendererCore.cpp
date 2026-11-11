@@ -751,6 +751,7 @@ RendererShaderGL* rectsEmulationGS_generateShaderGL(LatteDecompilerShader* verte
 			else
 				gsSrc.append(fmt::format(" vec4 passParameterSem{}Out;\r\n", vsSemanticId));
 		}
+		rectsEmulationGS_declareDefaultInputs(gsSrc, psInputTable, LatteGPUState.contextRegister, parameterMask, f == 0);
 	}
 
 	// gen function

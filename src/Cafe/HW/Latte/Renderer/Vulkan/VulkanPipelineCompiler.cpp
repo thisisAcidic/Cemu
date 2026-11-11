@@ -55,6 +55,7 @@ RendererShaderVk* rectsEmulationGS_generate(LatteDecompilerShader* vertexShader,
 			else
 				gsSrc.append(fmt::format(" vec4 passParameterSem{}Out;\r\n", vsSemanticId));
 		}
+		rectsEmulationGS_declareDefaultInputs(gsSrc, psInputTable, latteRegister.GetRawView(), parameterMask, f == 0);
 	}
 
 	// gen function

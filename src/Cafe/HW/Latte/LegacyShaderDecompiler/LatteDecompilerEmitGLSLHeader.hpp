@@ -407,6 +407,33 @@ namespace LatteDecompiler
 			src->add("out");
 			src->addFmt(" vec4 passParameterSem{};" _CRLF, psInputTable->import[psInputIndex].semanticId);
 		}
+		// Pixel shader inputs that this vertex shader doesn't export get the default value of SPI_PS_INPUT_CNTL on the GPU.
+		// Vulkan requires the previous stage to write every fragment shader input (Adreno drivers fail the pipeline otherwise),
+		// so declare them here and write the default at the start of main
+		for (sint32 f = 0; f < psInputTable->count; f++)
+		{
+			if (!psInputTable->isDefaultInput(shaderContext->contextRegisters, parameterMask, f))
+				continue;
+			src->addFmt("layout(location = {}) ", f);
+			if (psInputTable->import[f].isFlat)
+				src->add("flat ");
+			if (psInputTable->import[f].isNoPerspective)
+				src->add("noperspective ");
+			src->addFmt("out vec4 passParameterSem{};" _CRLF, psInputTable->import[f].semanticId);
+		}
+	}
+
+	void _emitVSDefaultExports(LatteDecompilerShaderContext* shaderContext)
+	{
+		auto* src = shaderContext->shaderSource;
+		LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
+		for (sint32 f = 0; f < psInputTable->count; f++)
+		{
+			if (!psInputTable->isDefaultInput(shaderContext->contextRegisters, shaderContext->shader->outputParameterMask, f))
+				continue;
+			static constexpr const char* s_defaultValues[4] = { "vec4(0.0, 0.0, 0.0, 0.0)", "vec4(0.0, 0.0, 0.0, 1.0)", "vec4(1.0, 1.0, 1.0, 0.0)", "vec4(1.0, 1.0, 1.0, 1.0)" };
+			src->addFmt("passParameterSem{} = {};" _CRLF, psInputTable->import[f].semanticId, s_defaultValues[psInputTable->import[f].defaultValue & 3]);
+		}
 	}
 
 	void _emitPSImports(LatteDecompilerShaderContext* shaderContext)

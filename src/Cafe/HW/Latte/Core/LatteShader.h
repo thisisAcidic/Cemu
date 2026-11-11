@@ -30,6 +30,7 @@ struct LatteShaderPSInputTable
 		uint32 semanticId;
 		bool isFlat;
 		bool isNoPerspective;
+		uint8 defaultValue; // used when the vertex shader doesn't export the semantic, see SPI_PS_INPUT_CNTL
 	};
 	psImport_t import[GPU7_PS_MAX_INPUTS]{}; // GPR is index
 	sint32 count;
@@ -82,6 +83,20 @@ struct LatteShaderPSInputTable
 				return f;
 		}
 		return -1;
+	}
+
+	// true if the GPU passes the default value of this input because the vertex shader doesn't export its semantic
+	bool isDefaultInput(uint32* contextRegisters, uint32 vsOutputParameterMask, sint32 psInputIndex) const
+	{
+		sint32 semanticId = (sint32)import[psInputIndex].semanticId;
+		if (semanticId > LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX)
+			return false;
+		for (sint32 i = 0; i < 32; i++)
+		{
+			if ((vsOutputParameterMask & (1u << i)) != 0 && getVertexShaderOutParamSemanticId(contextRegisters, i) == semanticId)
+				return false;
+		}
+		return true;
 	}
 };
 

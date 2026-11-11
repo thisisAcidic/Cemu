@@ -81,6 +81,25 @@ void LatteDraw_handleSpecialState8_clearAsDepth()
 
 /* rects emulation */
 
+// the vertex shader writes the default values of pixel shader inputs it doesn't export, pass them on like exported parameters
+void rectsEmulationGS_declareDefaultInputs(std::string& gsSrc, LatteShaderPSInputTable* psInputTable, uint32* contextRegisters, uint32 parameterMask, bool isInput)
+{
+	for (sint32 f = 0; f < psInputTable->count; f++)
+	{
+		if (!psInputTable->isDefaultInput(contextRegisters, parameterMask, f))
+			continue;
+		gsSrc.append(fmt::format("layout(location = {}) ", f));
+		if (psInputTable->import[f].isFlat)
+			gsSrc.append("flat ");
+		if (psInputTable->import[f].isNoPerspective)
+			gsSrc.append("noperspective ");
+		if (isInput)
+			gsSrc.append(fmt::format("in vec4 passParameterSem{}In[];\r\n", psInputTable->import[f].semanticId));
+		else
+			gsSrc.append(fmt::format("out vec4 passParameterSem{}Out;\r\n", psInputTable->import[f].semanticId));
+	}
+}
+
 void rectsEmulationGS_outputSingleVertex(std::string& gsSrc, LatteDecompilerShader* vertexShader, LatteShaderPSInputTable* psInputTable, sint32 vIdx, const LatteContextRegister& latteRegister)
 {
 	auto parameterMask = vertexShader->outputParameterMask;
@@ -95,6 +114,11 @@ void rectsEmulationGS_outputSingleVertex(std::string& gsSrc, LatteDecompilerShad
 		if (!psInputTable->hasPSImportForSemanticId(vsSemanticId))
 			continue;
 		gsSrc.append(fmt::format("passParameterSem{}Out = passParameterSem{}In[{}];\r\n", vsSemanticId, vsSemanticId, vIdx));
+	}
+	for (sint32 f = 0; f < psInputTable->count; f++)
+	{
+		if (psInputTable->isDefaultInput(latteRegister.GetRawView(), parameterMask, f))
+			gsSrc.append(fmt::format("passParameterSem{}Out = passParameterSem{}In[{}];\r\n", psInputTable->import[f].semanticId, psInputTable->import[f].semanticId, vIdx));
 	}
 	gsSrc.append(fmt::format("gl_Position = gl_in[{}].gl_Position;\r\n", vIdx));
 	gsSrc.append("EmitVertex();\r\n");
@@ -114,6 +138,11 @@ void rectsEmulationGS_outputGeneratedVertex(std::string& gsSrc, LatteDecompilerS
 		if (!psInputTable->hasPSImportForSemanticId(vsSemanticId))
 			continue;
 		gsSrc.append(fmt::format("passParameterSem{}Out = gen4thVertex{}(passParameterSem{}In[0], passParameterSem{}In[1], passParameterSem{}In[2]);\r\n", vsSemanticId, variant, vsSemanticId, vsSemanticId, vsSemanticId));
+	}
+	for (sint32 f = 0; f < psInputTable->count; f++)
+	{
+		if (psInputTable->isDefaultInput(latteRegister.GetRawView(), parameterMask, f))
+			gsSrc.append(fmt::format("passParameterSem{}Out = passParameterSem{}In[0];\r\n", psInputTable->import[f].semanticId, psInputTable->import[f].semanticId));
 	}
 	gsSrc.append(fmt::format("gl_Position = gen4thVertex{}(gl_in[0].gl_Position, gl_in[1].gl_Position, gl_in[2].gl_Position);\r\n", variant));
 	gsSrc.append("EmitVertex();\r\n");

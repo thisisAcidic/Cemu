@@ -3924,6 +3924,8 @@ void LatteDecompiler_emitGLSLShader(LatteDecompilerShaderContext* shaderContext,
 
 	if( shader->shaderType == LatteConst::ShaderType::Vertex )
 		src->addFmt("uvec4 attrDecoder;" _CRLF);
+	if (shader->shaderType == LatteConst::ShaderType::Vertex && !shaderContext->options->usesGeometryShader)
+		LatteDecompiler::_emitVSDefaultExports(shaderContext);
 	if (shaderContext->typeTracker.genIntReg)
 		src->addFmt("int backupReg0i, backupReg1i, backupReg2i, backupReg3i, backupReg4i;" _CRLF);
 	if (shaderContext->typeTracker.genFloatReg)
