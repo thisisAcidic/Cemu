@@ -7,6 +7,7 @@
 - Vulkan: The command buffer is submitted when the next render pass begins instead of in the middle of one. On tiled GPUs like the Adreno, ending a render pass early stores and reloads all of its attachments.
 - Together with the 60 FPS pack, Need for Speed: Most Wanted U now runs at 59 to 60 FPS while driving through the city on the AYN Thor, also in the busiest part of the tested route, where it dropped to 52 FPS before the two GPU changes. Before the recompiler change it reached 20 to 30 FPS with the pack.
 - Fixed trees, grass and parts of buildings glowing white in Need for Speed: Most Wanted U. The game draws foliage with a pixel shader that exports two of the four G-buffer targets it has enabled. The other two kept their content, which there is the previous frame's image, and the lighting pass added it as emitted light. Color targets that are enabled but not exported are now written with zero. The first start compiles the affected shaders again.
+- Game profiles: *Anti-aliasing (FXAA)* can be set per game in *Edit game profile*, to follow the graphics settings, on or off. Need for Speed: Most Wanted U has it off by default, the game already smooths its image with its own FXAA, and it saves about 2 % of GPU time there.
 - Graphic packs: Shader replacements whose hash starts with 8 to f are loaded on Android. Android's `swscanf` limits hexadecimal numbers to the largest signed 64-bit value, so these files got a wrong hash and were never used.
 
 ## Cidemu 0.5
