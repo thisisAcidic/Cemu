@@ -31,6 +31,9 @@ public:
 	void SetGraphicsAPI(GraphicAPI graphicApi) { m_graphics_api = graphicApi; }
 	void ClearGraphicsAPI() { m_graphics_api.reset(); }
 	[[nodiscard]] const AccurateShaderMulOption& GetAccurateShaderMul() const { return m_accurateShaderMul; }
+	// empty if the game uses the FXAA setting of the graphics settings
+	[[nodiscard]] const std::optional<bool>& GetFXAA() const { return m_fxaa; }
+	void SetFXAA(std::optional<bool> fxaa) { m_fxaa = fxaa; }
 	void SetAccurateShaderMul(AccurateShaderMulOption accurateShaderMulOption) { m_accurateShaderMul = accurateShaderMulOption; }
 #ifdef ENABLE_METAL
 	[[nodiscard]] bool GetShaderFastMath() const { return m_shaderFastMath; }
@@ -90,6 +93,7 @@ private:
 	// graphic settings
 	std::optional<GraphicAPI> m_graphics_api{};
 	AccurateShaderMulOption m_accurateShaderMul = AccurateShaderMulOption::True;
+	std::optional<bool> m_fxaa{};
 #ifdef ENABLE_METAL
 	bool m_shaderFastMath = true;
 	MetalBufferCacheMode m_metalBufferCacheMode = MetalBufferCacheMode::Auto;

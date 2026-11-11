@@ -73,6 +73,16 @@ fun GameProfileEditScreen(
             },
         )
         SingleSelection(
+            label = tr("Anti-aliasing (FXAA)"),
+            initialChoice = { NativeGameTitles.getFxaaModeForTitle(titleId) },
+            choices = listOf(
+                NativeGameTitles.FxaaMode.GLOBAL,
+                NativeGameTitles.FxaaMode.ON,
+                NativeGameTitles.FxaaMode.OFF,
+            ),
+            choiceToString = { fxaaMode -> fxaaModeToString(fxaaMode) },
+            onChoiceChanged = { fxaaMode -> NativeGameTitles.setFxaaModeForTitle(titleId, fxaaMode) })
+        SingleSelection(
             label = tr("CPU mode"),
             initialChoice = { NativeGameTitles.getCpuModeForTitle(titleId) },
             choices = listOf(
@@ -109,6 +119,12 @@ private fun customDriverSettingChoiceToString(driverSettingChoice: DriverSetting
         DriverSettingMode.SYSTEM -> tr("System driver")
         else -> driverSettingChoice.customDriverData!!.name
     }
+
+private fun fxaaModeToString(fxaaMode: Int): String = when (fxaaMode) {
+    NativeGameTitles.FxaaMode.ON -> tr("On")
+    NativeGameTitles.FxaaMode.OFF -> tr("Off")
+    else -> tr("Like the graphics settings")
+}
 
 private fun cpuModeToString(cpuMode: Int): String = when (cpuMode) {
     NativeGameTitles.CPUMode.SINGLECOREINTERPRETER -> tr("Single-core interpreter")

@@ -58,6 +58,18 @@ object NativeGameTitles {
     @JvmStatic
     external fun setShaderMultiplicationAccuracyForTitleEnabled(gameTitleId: Long, enabled: Boolean)
 
+    object FxaaMode {
+        const val GLOBAL: Int = 0
+        const val ON: Int = 1
+        const val OFF: Int = 2
+    }
+
+    @JvmStatic
+    external fun getFxaaModeForTitle(gameTitleId: Long): Int
+
+    @JvmStatic
+    external fun setFxaaModeForTitle(gameTitleId: Long, fxaaMode: Int)
+
     object DriverSettingMode {
         const val GLOBAL: Int = 0
         const val SYSTEM: Int = 1

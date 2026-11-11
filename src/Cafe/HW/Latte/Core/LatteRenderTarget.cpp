@@ -15,6 +15,7 @@
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "HW/Latte/Renderer/RendererCore.h"
 #include "config/ActiveSettings.h"
+#include "Cafe/GameProfile/GameProfile.h"
 #include "WindowSystem.h"
 #include "Cafe/OS/libs/erreula/erreula.h"
 #include "input/InputManager.h"
@@ -967,7 +968,7 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 		}
 	}
 
-	if (shader == nullptr && GetConfig().fxaa && !isPadView)
+	if (shader == nullptr && g_current_game_profile->GetFXAA().value_or(GetConfig().fxaa) && !isPadView)
 	{
 		shader = renderUpsideDown ? RendererOutputShader::s_fxaa_shader_ud : RendererOutputShader::s_fxaa_shader;
 		filter = LatteTextureView::MagFilter::kLinear;

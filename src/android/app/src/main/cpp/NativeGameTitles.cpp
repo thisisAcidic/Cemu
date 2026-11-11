@@ -259,6 +259,25 @@ Java_info_cemu_cemu_nativeinterface_NativeGameTitles_setShaderMultiplicationAccu
 	NativeGameTitles::s_currentGameProfile.Save(game_title_id);
 }
 
+// 0: the graphics settings decide, 1: on, 2: off
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_getFxaaModeForTitle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong game_title_id)
+{
+	NativeGameTitles::LoadGameProfile(game_title_id);
+	const auto& fxaa = NativeGameTitles::s_currentGameProfile.GetFXAA();
+	if (!fxaa.has_value())
+		return 0;
+	return fxaa.value() ? 1 : 2;
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_setFxaaModeForTitle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong game_title_id, jint fxaa_mode)
+{
+	NativeGameTitles::LoadGameProfile(game_title_id);
+	NativeGameTitles::s_currentGameProfile.SetFXAA(fxaa_mode == 0 ? std::optional<bool>() : std::optional<bool>(fxaa_mode == 1));
+	NativeGameTitles::s_currentGameProfile.Save(game_title_id);
+}
+
 extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeGameTitles_getDriverSettingForTitle(JNIEnv* env, [[maybe_unused]] jclass clazz, jlong game_title_id)
 {
