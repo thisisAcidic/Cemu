@@ -1,0 +1,7 @@
+<resources>
+    <!-- the starting window stays black instead of showing the app icon -->
+    <style name="Theme.Cemu.Emulation" parent="Base.Theme.Cemu.Emulation">
+        <item name="android:windowSplashScreenBackground">@android:color/black</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+    </style>
+</resources>

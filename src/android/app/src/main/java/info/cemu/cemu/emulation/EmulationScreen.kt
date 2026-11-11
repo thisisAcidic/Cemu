@@ -1,6 +1,7 @@
 package info.cemu.cemu.emulation
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.view.Display
@@ -31,7 +32,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.SnackbarHost
@@ -104,7 +104,6 @@ fun EmulationScreen(
     var showEmulatedUSBDevices by remember { mutableStateOf(false) }
 
     val emulationError by viewModel.emulationError.collectAsState()
-    val isEmulationInitialized by viewModel.isEmulationInitialized.collectAsState()
     val sideMenuState by viewModel.sideMenuState.collectAsState()
     val emulationSettings by viewModel.emulationSettings.collectAsState()
     val secondaryDisplays = rememberSecondaryDisplays()
@@ -245,10 +244,6 @@ fun EmulationScreen(
 
     emulationError?.let {
         EmulationErrorDialog(it, onQuit)
-    }
-
-    if (!isEmulationInitialized) {
-        EmulationLoadingDialog()
     }
 
     if (showQuitConfirmationDialog) {
@@ -589,7 +584,7 @@ private fun EmulationSurface(
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            SurfaceView(context).apply {
+            SurfaceViewRedrawnUntilCreated(context).apply {
                 var firstChange = true
 
                 setOnTouchListener(CanvasOnTouchListener(isTV))
@@ -614,6 +609,46 @@ private fun EmulationSurface(
         })
 }
 
+/**
+ * A SurfaceView only creates its surface while its window draws. Right after the activity started, the first draw can
+ * be dropped (SurfaceSyncer "Failed to find sync"), and nothing else in this window draws afterwards, so the surface
+ * would never be created. Keep requesting frames until it exists.
+ */
+private class SurfaceViewRedrawnUntilCreated(context: Context) : SurfaceView(context) {
+    private var hasSurface = false
+    private val redraw = object : Runnable {
+        override fun run() {
+            if (hasSurface || !isAttachedToWindow || windowVisibility != VISIBLE) {
+                return
+            }
+            invalidate()
+            postOnAnimation(this)
+        }
+    }
+
+    init {
+        holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                hasSurface = true
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                hasSurface = false
+            }
+        })
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility == VISIBLE) {
+            removeCallbacks(redraw)
+            postOnAnimation(redraw)
+        }
+    }
+}
+
 @Composable
 private fun EmulationQuitConfirmationDialog(onQuit: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
@@ -622,16 +657,6 @@ private fun EmulationQuitConfirmationDialog(onQuit: () -> Unit, onDismiss: () ->
         confirmButton = { TextButton(onClick = onQuit) { Text(tr("Yes")) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr("No")) } },
         onDismissRequest = onDismiss,
-    )
-}
-
-@Composable
-private fun EmulationLoadingDialog() {
-    AlertDialog(
-        title = { Text(tr("Initializing emulation")) },
-        text = { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) },
-        confirmButton = {},
-        onDismissRequest = {},
     )
 }
 

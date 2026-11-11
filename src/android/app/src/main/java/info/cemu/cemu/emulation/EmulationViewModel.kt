@@ -273,7 +273,6 @@ class EmulationViewModel(
             .mapError { NativeError.LaunchingTitleError }
 
     private val _isEmulationInitialized = MutableStateFlow(false)
-    val isEmulationInitialized = _isEmulationInitialized.asStateFlow()
     private var emulationInitializationJob: Job? = null
     fun initializeEmulation() {
         if (_isEmulationInitialized.value || emulationInitializationJob != null) {

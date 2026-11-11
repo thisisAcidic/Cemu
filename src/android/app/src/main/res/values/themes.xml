@@ -9,6 +9,17 @@
         <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
     </style>
 
+    <!-- black from the first frame on, like the console between its menu and the game -->
+    <style name="Base.Theme.Cemu.Emulation" parent="Theme.Cemu">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+
+    <style name="Theme.Cemu.Emulation" parent="Base.Theme.Cemu.Emulation" />
+
     <style name="Theme.EmulationDisplay" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:windowAnimationStyle">@null</item>
