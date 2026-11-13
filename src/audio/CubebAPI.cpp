@@ -161,7 +161,7 @@ bool CubebAPI::Stop()
 void CubebAPI::SetVolume(sint32 volume)
 {
 	IAudioAPI::SetVolume(volume);
-	cubeb_stream_set_volume(m_stream, (float)volume / 100.0f);
+	cubeb_stream_set_volume(m_stream, 1.0f);
 }
 
 

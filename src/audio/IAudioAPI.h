@@ -56,6 +56,10 @@ public:
 
 	virtual sint32 GetVolume() const { return m_volume; }
 	virtual void SetVolume(sint32 volume) { m_volume = volume; }
+	// Games can mix louder than the 16 bit output holds, so the volume is applied to the samples before they are
+	// cut off to 16 bit instead of in the backend. Need for Speed: Most Wanted U drives the mix about 6 dB past
+	// full scale while accelerating, which turned the engine into a rasp
+	float GetVolumeScale() const { return (float)std::clamp(m_volume, 0, 100) / 100.0f; }
 	virtual void SetInputVolume(sint32 volume) { m_inputVolume = volume; }
 
 	virtual bool NeedAdditionalBlocks() const = 0;

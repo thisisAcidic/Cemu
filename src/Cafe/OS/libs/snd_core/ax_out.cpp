@@ -150,6 +150,24 @@ namespace snd_core
 	#define AX_FRAMES_PER_GROUP		(4)
 
 	sint16 tempTVChannelData[AX_SAMPLES_MAX * AX_TV_CHANNEL_COUNT * AX_FRAMES_PER_GROUP] = {};
+
+	// the volume is applied here and not in the audio backend, so that games which mix past full scale keep their
+	// headroom instead of being cut off at 16 bit
+	sint16 _AXClampToOutput(sint32 sample, float volumeScale)
+	{
+		return (sint16)std::clamp((sint32)((float)sample * volumeScale), -32768, 32767);
+	}
+
+	float _AXGetTVVolumeScale()
+	{
+		return g_tvAudio ? g_tvAudio->GetVolumeScale() : 1.0f;
+	}
+
+	float _AXGetDRCVolumeScale()
+	{
+		return g_padAudio ? g_padAudio->GetVolumeScale() : 1.0f;
+	}
+
 	sint32 tempAudioBlockCounter = 0;
 
 
@@ -217,6 +235,7 @@ namespace snd_core
 
 	void AXOut_SubmitTVFrame(sint32 frameIndex)
 	{
+		const float volumeScale = _AXGetTVVolumeScale();
 		sint32 numSamples = AIGetSamplesPerChannel(AX_DEV_TV);
 		if (__AXMode[AX_DEV_TV] == AX_MODE_6CH)
 		{
@@ -245,14 +264,14 @@ namespace snd_core
 				Back Left - BL			4
 				Back Right - BR			5
 				*/
-				dmaOutputBuffer[0] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel0), -32768), 32767));
-				dmaOutputBuffer[1] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel1), -32768), 32767));
+				dmaOutputBuffer[0] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel0), volumeScale));
+				dmaOutputBuffer[1] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel1), volumeScale));
 
-				dmaOutputBuffer[4] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel2), -32768), 32767));
-				dmaOutputBuffer[5] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel3), -32768), 32767));
+				dmaOutputBuffer[4] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel2), volumeScale));
+				dmaOutputBuffer[5] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel3), volumeScale));
 
-				dmaOutputBuffer[2] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel4), -32768), 32767));
-				dmaOutputBuffer[3] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel5), -32768), 32767));
+				dmaOutputBuffer[2] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel4), volumeScale));
+				dmaOutputBuffer[3] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel5), volumeScale));
 				dmaOutputBuffer += 6;
 				// next sample
 				inputChannel0++;
@@ -271,8 +290,8 @@ namespace snd_core
 			sint16* dmaOutputBuffer = __AXTVDMABuffers[frameIndex];
 			for (sint32 i = 0; i < numSamples; i++)
 			{
-				dmaOutputBuffer[0] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel0), -32768), 32767));
-				dmaOutputBuffer[1] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel1), -32768), 32767));
+				dmaOutputBuffer[0] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel0), volumeScale));
+				dmaOutputBuffer[1] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel1), volumeScale));
 				dmaOutputBuffer += 2;
 				// next sample
 				inputChannel0++;
@@ -286,7 +305,7 @@ namespace snd_core
 			sint16* dmaOutputBuffer = __AXTVDMABuffers[frameIndex];
 			for (sint32 i = 0; i < numSamples; i++)
 			{
-				dmaOutputBuffer[0] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel0), -32768), 32767));
+				dmaOutputBuffer[0] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel0), volumeScale));
 				dmaOutputBuffer++;
 				// next sample
 				inputChannel0++;
@@ -327,6 +346,7 @@ namespace snd_core
 
 	void AXOut_SubmitDRCFrame(sint32 frameIndex)
 	{
+		const float volumeScale = _AXGetDRCVolumeScale();
 		sint32 numSamples = AIGetSamplesPerChannel(AX_DEV_DRC);
 		if (__AXMode[AX_DEV_DRC] == AX_MODE_6CH)
 		{
@@ -337,8 +357,8 @@ namespace snd_core
 			sint16* dmaOutputBuffer = AIGetCurrentDMABuffer(AX_DEV_DRC);
 			for (sint32 i = 0; i < numSamples; i++)
 			{
-				dmaOutputBuffer[0] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel0), -32768), 32767));
-				dmaOutputBuffer[1] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel1), -32768), 32767));
+				dmaOutputBuffer[0] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel0), volumeScale));
+				dmaOutputBuffer[1] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel1), volumeScale));
 
 				dmaOutputBuffer[4] = 0;
 				dmaOutputBuffer[5] = 0;
@@ -361,8 +381,8 @@ namespace snd_core
 			sint16* dmaOutputBuffer = __AXDRCDMABuffers[frameIndex];
 			for (sint32 i = 0; i < numSamples; i++)
 			{
-				dmaOutputBuffer[0] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel0), -32768), 32767));
-				dmaOutputBuffer[1] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel1), -32768), 32767));
+				dmaOutputBuffer[0] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel0), volumeScale));
+				dmaOutputBuffer[1] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel1), volumeScale));
 				dmaOutputBuffer += 2;
 				// next sample
 				inputChannel0++;
@@ -378,7 +398,7 @@ namespace snd_core
 			for (sint32 i = 0; i < numSamples; i++)
 			{
 				// write mono input as stereo output
-				dmaOutputBuffer[1] = dmaOutputBuffer[0] = _swapEndianS16((sint16)std::min(std::max(_swapEndianS32(*inputChannel0), -32768), 32767));
+				dmaOutputBuffer[1] = dmaOutputBuffer[0] = _swapEndianS16(_AXClampToOutput(_swapEndianS32(*inputChannel0), volumeScale));
 				dmaOutputBuffer += 2;
 				// next sample
 				inputChannel0++;
