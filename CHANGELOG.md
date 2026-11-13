@@ -1,5 +1,10 @@
 # Changelog
 
+## Cidemu 0.7
+
+- Fixed a rasping sound in Need for Speed: Most Wanted U while accelerating. The game mixes louder than the 16 bit audio output holds, so about one percent of all samples were cut off, which lasted as long as the engine was loud. The volume is now applied before the samples are cut off instead of on the audio stream, where it could only make the distortion quieter. At the default volume of 50 % the output is as loud as before.
+- A game keeps running while the device is folded or the screen is off. Android treated the emulation as a cached process, which on the AYN Thor raised its priority value from 0 to 700, so with over a gigabyte in use the low memory killer took it first and about every second time the device was opened the game had restarted. A notification shows while a game is loaded.
+
 ## Cidemu 0.6
 
 - Recompiler: Functions with `ps_nabs`, `psq_lx` or `psq_lux`, and functions with an `fmsub` whose target is also the subtracted register, ran in the interpreter. In Need for Speed: Most Wanted U these were about 400 functions that took about 30 % of the main core while driving.
