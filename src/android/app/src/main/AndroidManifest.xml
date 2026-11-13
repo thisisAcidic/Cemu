@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- the launcher, to bring back its screen on the second display when a game goes to the background -->
     <queries>
@@ -44,7 +47,7 @@
         </activity>
         <activity
             android:name=".emulation.EmulationActivity"
-            android:configChanges="orientation|screenSize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode|keyboard|keyboardHidden|navigation|touchscreen|layoutDirection|fontScale|locale"
             android:theme="@style/Theme.Cemu.Emulation"
             android:exported="true"
             android:launchMode="singleTop"
@@ -68,6 +71,10 @@
                 <data android:pathPattern=".*\\.rpx" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".emulation.EmulationService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <activity
             android:name=".emulation.EmulationDisplayActivity"

@@ -125,6 +125,9 @@ class EmulationActivity : AppCompatActivity() {
 
         val gamePath = getGamePath()
 
+        // the emulation must not be killed while the device is folded or the screen is off
+        EmulationService.start(this, null)
+
         setContent {
             TranslatableContent {
                 ActivityContent {
@@ -169,7 +172,15 @@ class EmulationActivity : AppCompatActivity() {
         controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+
+        if (isFinishing)
+            EmulationService.stop(this)
+    }
+
     private fun onQuit() {
+        EmulationService.stop(this)
         finish()
         exitProcess(0)
     }
